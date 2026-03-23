@@ -25,10 +25,13 @@ jobs:
       - name: Type check
         run: bun run typecheck
 
+      - name: Setup npm auth
+        run: echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > ~/.npmrc
+
       - name: Publish to npm
         run: bun publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ── 跨平台二进制构建 + GitHub Release ───────
   build-binaries:
