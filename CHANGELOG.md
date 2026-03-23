@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/snailuu/ccs/compare/v1.1.0...v1.1.1) (2026-03-23)
+
+
+### Bug Fixes
+
+* **ci:** 修复 npm 发布认证方式避免密钥泄露 ([ee0e3cc](https://github.com/snailuu/ccs/commit/ee0e3cc249ece98a600e3fb946b497197225668f))
+
 # 1.1.0 (2026-03-23)
 
 
