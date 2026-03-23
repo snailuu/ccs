@@ -20,6 +20,19 @@ bun build ccs.ts --compile --outfile ccs
 sudo mv ccs /usr/local/bin/ccs
 ```
 
+## 发布流程
+
+npm 包改为**本地手动发布**，GitHub Actions 只负责在 tag 推送后构建跨平台二进制并创建 GitHub Release。
+
+```bash
+# 本地发布 npm 包
+npm publish --access public
+```
+
+- 发布 npm 包前，先确认本机 `npm whoami` 可用，必要时执行 `npm login`
+- 推送版本 tag 后，`.github/workflows/release.yml` 会自动构建二进制并上传到 GitHub Release
+- GitHub Actions 不再执行 `npm publish`
+
 ## 快速开始
 
 ### 1. 配置同步后端
