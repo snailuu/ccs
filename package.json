@@ -1,18 +1,48 @@
 {
-  "name": "ccs",
+  "name": "@snailuu/ccs",
   "version": "1.0.0",
   "description": "CLI sync tool for MCP, Skills, and Prompts across AI clients (Claude, Codex, Gemini, OpenCode)",
   "type": "module",
   "bin": {
     "ccs": "./ccs.ts"
   },
+  "files": [
+    "ccs.ts",
+    "src/",
+    "README.md"
+  ],
   "scripts": {
     "dev": "bun run ccs.ts",
     "build": "bun build ccs.ts --compile --outfile dist/ccs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run typecheck",
+    "release": "release-it",
+    "release:dry": "release-it --dry-run"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "keywords": [
+    "cli",
+    "sync",
+    "mcp",
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "cc-switch"
+  ],
+  "author": "snailuu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/snailuu/ccs.git"
   },
   "devDependencies": {
+    "@release-it/conventional-changelog": "^10.0.6",
     "@types/node": "^20.0.0",
+    "release-it": "^19.2.4",
     "typescript": "^5.3.0"
   },
   "dependencies": {

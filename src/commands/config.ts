@@ -99,7 +99,7 @@ async function configureGist(config: CcsConfig): Promise<void> {
     message: "GitHub Personal Access Token",
     placeholder: "ghp_xxxxxxxxxxxx",
     initialValue: config.backend?.type === "gist" ? config.backend.token : "",
-    validate: (v) => (!v.trim() ? "Token 不能为空" : undefined),
+    validate: (v) => (!v?.trim() ? "Token 不能为空" : undefined),
   });
   if (p.isCancel(token)) { p.outro("已取消"); return; }
 
@@ -138,7 +138,7 @@ async function configureWebDav(config: CcsConfig): Promise<void> {
         message: "WebDAV 服务地址",
         placeholder: "https://dav.jianguoyun.com/dav",
         initialValue: existing?.url ?? "",
-        validate: (v) => (!v.trim() ? "URL 不能为空" : undefined),
+        validate: (v) => (!v?.trim() ? "URL 不能为空" : undefined),
       }),
     username: () =>
       p.text({
@@ -181,7 +181,7 @@ async function configureLocal(config: CcsConfig): Promise<void> {
     message: "Bundle 文件路径",
     placeholder: "~/iCloud/ccs-bundle.json",
     initialValue: existing?.path ?? "",
-    validate: (v) => (!v.trim() ? "路径不能为空" : undefined),
+    validate: (v) => (!v?.trim() ? "路径不能为空" : undefined),
   });
   if (p.isCancel(filePath)) { p.outro("已取消"); return; }
 

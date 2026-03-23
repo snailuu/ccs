@@ -1,0 +1,12 @@
+# 编译产物
+dist/
+
+# 开发文件
+.github/
+.git/
+.release-it.json
+bun.lock
+tsconfig.json
+
+# 系统文件
+.DS_Store

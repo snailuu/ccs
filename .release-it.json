@@ -1,0 +1,29 @@
+{
+  "git": {
+    "commitMessage": "release: v${version}",
+    "tagName": "v${version}",
+    "tagAnnotation": "Release v${version}",
+    "requireCommits": true,
+    "requireCleanWorkingDir": true
+  },
+  "npm": {
+    "publish": true,
+    "publishArgs": ["--access", "public"]
+  },
+  "github": {
+    "release": true,
+    "releaseName": "v${version}",
+    "autoGenerate": false
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": "angular",
+      "infile": "CHANGELOG.md",
+      "header": "# Changelog"
+    }
+  },
+  "hooks": {
+    "before:init": ["bun run typecheck"],
+    "after:bump": ["bun run build"]
+  }
+}
