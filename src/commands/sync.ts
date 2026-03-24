@@ -19,6 +19,10 @@ import { createBackend } from "../backends/index.ts";
 import { writeMcp } from "../writers/mcp.ts";
 import { writePrompts } from "../writers/prompt.ts";
 import { writeSkills, formatPendingSkills } from "../writers/skill.ts";
+import {
+  selectMcpEntries, selectPromptEntries, selectSkillEntries,
+  previewMcp, previewPrompts, previewSkills,
+} from "../preview.ts";
 
 export async function syncCommand(flags: Flags): Promise<void> {
   const config = readConfig();
@@ -49,10 +53,8 @@ export async function syncCommand(flags: Flags): Promise<void> {
   let categories: string[];
 
   if (flags.only) {
-    // --only 模式：跳过类别选择
     categories = flags.only;
   } else {
-    // 交互式选择类别
     const categoryOptions: { value: string; label: string; hint: string }[] = [];
     if (bundle.mcp.length > 0)
       categoryOptions.push({ value: "mcp", label: "MCP 服务器", hint: `${bundle.mcp.length} 个` });
@@ -76,7 +78,7 @@ export async function syncCommand(flags: Flags): Promise<void> {
     categories = selected;
   }
 
-  // 收集所有选中的条目
+  // 进入每个类别选择条目
   let selectedMcp: McpEntry[] = [];
   let selectedPrompts: PromptEntry[] = [];
   let selectedSkills: SkillMeta[] = [];
@@ -137,108 +139,4 @@ export async function syncCommand(flags: Flags): Promise<void> {
   writeConfig(config);
 
   p.outro("同步完成");
-}
-
-// ============================================================
-// 条目选择器
-// ============================================================
-
-async function selectMcpEntries(entries: McpEntry[]): Promise<McpEntry[] | null> {
-  const result = await p.multiselect({
-    message: "选择要同步的 MCP 服务器",
-    options: entries.map((e) => {
-      const apps = Object.entries(e.apps)
-        .filter(([, v]) => v)
-        .map(([k]) => k)
-        .join(", ");
-      return { value: e.id, label: e.id, hint: apps };
-    }),
-    required: true,
-  });
-  if (p.isCancel(result)) return null;
-  const ids = new Set(result);
-  return entries.filter((e) => ids.has(e.id));
-}
-
-async function selectPromptEntries(entries: PromptEntry[]): Promise<PromptEntry[] | null> {
-  const result = await p.multiselect({
-    message: "选择要同步的 Prompt",
-    options: entries.map((e) => {
-      const lines = e.content.split("\n").length;
-      return { value: e.app, label: e.app, hint: `${lines} 行` };
-    }),
-    required: true,
-  });
-  if (p.isCancel(result)) return null;
-  const apps = new Set(result);
-  return entries.filter((e) => apps.has(e.app));
-}
-
-async function selectSkillEntries(entries: SkillMeta[]): Promise<SkillMeta[] | null> {
-  const result = await p.multiselect({
-    message: "选择要同步的 Skill",
-    options: entries.map((e) => {
-      const apps = Object.entries(e.apps)
-        .filter(([, v]) => v)
-        .map(([k]) => k)
-        .join(", ");
-      const hint = e.description
-        ? `${e.description.slice(0, 30)}${e.description.length > 30 ? "…" : ""} | ${apps}`
-        : apps;
-      return { value: e.directory, label: e.name || e.directory, hint };
-    }),
-    required: true,
-  });
-  if (p.isCancel(result)) return null;
-  const dirs = new Set(result);
-  return entries.filter((e) => dirs.has(e.directory));
-}
-
-// ============================================================
-// 预览
-// ============================================================
-
-function previewMcp(entries: McpEntry[]): void {
-  if (entries.length === 0) return;
-
-  const lines = entries.map((e) => {
-    const apps = Object.entries(e.apps)
-      .filter(([, v]) => v)
-      .map(([k]) => k)
-      .join(", ");
-    const type = e.type ?? "stdio";
-    const target = e.command
-      ? `${e.command}${e.args?.length ? " " + e.args.join(" ") : ""}`
-      : e.url ?? "";
-    return `  ${e.id} (${type})\n    命令: ${target}\n    应用: ${apps}`;
-  });
-
-  p.log.step(`MCP 服务器 (${entries.length} 个):\n${lines.join("\n")}`);
-}
-
-function previewPrompts(entries: PromptEntry[]): void {
-  if (entries.length === 0) return;
-
-  for (const e of entries) {
-    const separator = "─".repeat(40);
-    p.log.step(
-      `Prompt [${e.app}] (${e.content.split("\n").length} 行):\n` +
-      `${separator}\n${e.content}\n${separator}`
-    );
-  }
-}
-
-function previewSkills(entries: SkillMeta[]): void {
-  if (entries.length === 0) return;
-
-  const lines = entries.map((e) => {
-    const apps = Object.entries(e.apps)
-      .filter(([, v]) => v)
-      .map(([k]) => k)
-      .join(", ");
-    const repo = e.repo ? `${e.repo.owner}/${e.repo.name}` : "本地";
-    return `  ${e.name || e.directory}\n    目录: ${e.directory} | 来源: ${repo}\n    应用: ${apps}`;
-  });
-
-  p.log.step(`Skill (${entries.length} 个):\n${lines.join("\n")}`);
 }
