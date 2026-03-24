@@ -1,6 +1,6 @@
 {
   "name": "@snailuu/ccs",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "CLI sync tool for MCP, Skills, and Prompts across AI clients (Claude, Codex, Gemini, OpenCode)",
   "type": "module",
   "bin": {
@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "dev": "bun run ccs.ts",
-    "build": "bun build ccs.ts --compile --outfile dist/ccs",
+    "build": "bun build ccs.ts --compile --outfile dist/ccs --define __APP_VERSION__=\"'$(node -p \"require('./package.json').version\")'\"",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run typecheck",
     "release": "release-it",

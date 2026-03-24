@@ -32,8 +32,8 @@ export interface CcsConfig {
   backend?: SyncBackend;
   /** 上次 push 时间（ISO） */
   lastPush?: string;
-  /** 上次 pull 时间（ISO） */
-  lastPull?: string;
+  /** 上次 sync 时间（ISO） */
+  lastSync?: string;
 }
 
 // ---- 路径 ----

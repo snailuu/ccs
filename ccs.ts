@@ -7,37 +7,49 @@
  *
  * 用法:
  *   ccs push              导出本机配置并上传
- *   ccs pull              下载配置并应用到本机
+ *   ccs sync              交互式选择并同步云端配置
  *   ccs status            显示本机当前配置摘要
  *   ccs config            查看/设置同步后端
- *   ccs diff              预览 pull 前的差异
+ *   ccs diff              预览本机与云端的差异
  */
 
-import { readConfig, writeConfig, type CcsConfig } from "./src/config.ts";
 import { pushCommand } from "./src/commands/push.ts";
-import { pullCommand } from "./src/commands/pull.ts";
 import { statusCommand } from "./src/commands/status.ts";
 import { configCommand } from "./src/commands/config.ts";
 import { diffCommand } from "./src/commands/diff.ts";
+import { syncCommand } from "./src/commands/sync.ts";
 
-const VERSION = "1.0.0";
+declare const __APP_VERSION__: string;
+
+function getVersion(): string {
+  if (typeof __APP_VERSION__ !== "undefined") return __APP_VERSION__;
+  // 开发模式：从 package.json 读取
+  try {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const pkgPath = resolve(import.meta.dirname ?? ".", "package.json");
+    return JSON.parse(readFileSync(pkgPath, "utf-8")).version ?? "dev";
+  } catch { return "dev"; }
+}
+
+const VERSION = getVersion();
 
 function printHelp() {
   console.log(`ccs v${VERSION} - CC Switch Sync CLI
 
 使用方法:
   ccs push [--dry-run]      导出本机配置并上传到云端
-  ccs pull [--dry-run]      从云端下载配置并应用到本机
+  ccs sync                  从云端拉取并交互式选择同步内容
   ccs status                显示本机当前配置摘要
-  ccs diff                  预览 pull 前本机与云端的差异
+  ccs diff                  预览本机与云端的差异
   ccs config                查看同步后端配置
   ccs config set <key> <value>  设置同步后端参数
 
 选项:
   --help, -h                显示帮助
   --version, -v             显示版本
-  --only mcp,skill,prompt   只同步指定类型（逗号分隔）
-  --dry-run                 预览操作，不实际写入文件
+  --only mcp,skill,prompt   只操作指定类型（push/sync，逗号分隔）
+  --dry-run                 预览操作，不实际写入文件（push）
 
 同步后端:
   gist     GitHub Gist（需设置 GITHUB_TOKEN）
@@ -48,7 +60,7 @@ function printHelp() {
   ccs config set backend gist
   ccs config set gist.token ghp_xxxx
   ccs push
-  ccs pull --dry-run
+  ccs sync
   ccs push --only mcp,prompt
 `);
 }
@@ -77,8 +89,8 @@ async function main() {
       case "push":
         await pushCommand(flags);
         break;
-      case "pull":
-        await pullCommand(flags);
+      case "sync":
+        await syncCommand(flags);
         break;
       case "status":
         await statusCommand(flags);

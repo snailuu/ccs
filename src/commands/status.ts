@@ -31,7 +31,7 @@ export async function statusCommand(_flags: Flags): Promise<void> {
     }
   }
   if (config.lastPush) console.log(`  上次 push: ${config.lastPush}`);
-  if (config.lastPull) console.log(`  上次 pull: ${config.lastPull}`);
+  if (config.lastSync) console.log(`  上次 sync: ${config.lastSync}`);
 
   // 检测已安装的客户端
   console.log("\n── 检测到的 AI 客户端 ───────────────────────");

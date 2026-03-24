@@ -217,7 +217,7 @@ function showConfigClack(config: CcsConfig): void {
     lines.push(`路径: ${b.path}`);
   }
   if (config.lastPush) lines.push(`上次 push: ${config.lastPush}`);
-  if (config.lastPull) lines.push(`上次 pull: ${config.lastPull}`);
+  if (config.lastSync) lines.push(`上次 sync: ${config.lastSync}`);
 
   p.log.info("当前配置:\n" + lines.map((l) => `  ${l}`).join("\n"));
 }
@@ -247,7 +247,7 @@ function showConfig(config: CcsConfig): void {
     console.log(`  path: ${b.path}`);
   }
   if (config.lastPush) console.log(`\n上次 push: ${config.lastPush}`);
-  if (config.lastPull) console.log(`上次 pull:  ${config.lastPull}`);
+  if (config.lastSync) console.log(`上次 sync:  ${config.lastSync}`);
 }
 
 function applySet(config: CcsConfig, key: string, value: string): void {

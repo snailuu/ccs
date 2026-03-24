@@ -90,5 +90,5 @@ export async function diffCommand(_flags: Flags): Promise<void> {
   }
 
   console.log("");
-  console.log("运行 ccs pull 应用上述变更。");
+  console.log("运行 ccs sync 应用上述变更。");
 }
