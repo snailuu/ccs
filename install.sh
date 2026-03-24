@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-CDN_BASE="${CCS_CDN_BASE:-https://download.snailuu.com}"
+CDN_BASE="${CCS_CDN_BASE:-https://sh.snailuu.cn}"
 SERVICE="ccs"
 INSTALL_DIR="${CCS_INSTALL_DIR:-$HOME/.local/bin}"
 BINARY_NAME="ccs"
@@ -33,14 +33,6 @@ detect_platform() {
   fi
 }
 
-# 获取最新版本号（从 CDN 的 manifest.json 解析）
-get_latest_version() {
-  curl -fsSL "${CDN_BASE}/${SERVICE}/latest/manifest.json" \
-    | grep '"version"' \
-    | head -1 \
-    | sed 's/.*"version": *"//;s/".*//'
-}
-
 main() {
   echo "正在安装 ccs..."
 
@@ -54,12 +46,7 @@ main() {
     version="$CCS_VERSION"
     url="${CDN_BASE}/${SERVICE}/${version}/ccs-${platform}"
   else
-    version=$(get_latest_version)
-    if [ -z "$version" ]; then
-      echo "无法获取最新版本，请检查网络或手动指定: CCS_VERSION=v1.0.0 bash install.sh"
-      exit 1
-    fi
-    # 使用 latest 目录，CDN 缓存友好
+    version="latest"
     url="${CDN_BASE}/${SERVICE}/latest/ccs-${platform}"
   fi
   echo "版本: ${version}"

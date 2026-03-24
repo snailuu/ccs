@@ -55,6 +55,18 @@ chmod +x ccs
 mv ccs "$HOME/.local/bin/ccs"
 ```
 
+### 更新已安装的 ccs
+
+如果当前 `ccs` 是通过 `sh.snailuu.cn` 安装的单文件二进制，可以直接执行：
+
+```bash
+ccs update
+```
+
+> [!NOTE]
+> `ccs update` 只支持通过 `sh.snailuu.cn` 安装的单文件二进制版本，
+> 不支持 `bun run`、源码运行或其他安装方式。
+
 ## 快速开始
 
 ### 1. 配置同步后端
@@ -129,6 +141,7 @@ ccs sync
 | `ccs config` | 启动交互式配置向导 |
 | `ccs config show` | 显示当前后端配置 |
 | `ccs config set <key> <value>` | 通过脚本方式设置配置项 |
+| `ccs update` | 检测最新版本并在确认后更新当前二进制 |
 
 常用选项：
 

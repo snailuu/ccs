@@ -11,6 +11,7 @@
  *   ccs status            显示本机当前配置摘要
  *   ccs config            查看/设置同步后端
  *   ccs diff              预览本机与云端的差异
+ *   ccs update            检查并更新到最新版本
  */
 
 import { pushCommand } from "./src/commands/push.ts";
@@ -18,6 +19,7 @@ import { syncCommand } from "./src/commands/sync.ts";
 import { statusCommand } from "./src/commands/status.ts";
 import { configCommand } from "./src/commands/config.ts";
 import { diffCommand } from "./src/commands/diff.ts";
+import { updateCommand } from "./src/commands/update.ts";
 
 declare const __APP_VERSION__: string;
 
@@ -43,6 +45,7 @@ function printHelp() {
   ccs diff                  预览本机与云端的差异
   ccs config                查看同步后端配置
   ccs config set <key> <value>  设置同步后端参数
+  ccs update                检查并更新到最新版本
 
 选项:
   --help, -h                显示帮助
@@ -100,6 +103,9 @@ async function main() {
         break;
       case "config":
         await configCommand(restArgs);
+        break;
+      case "update":
+        await updateCommand(VERSION);
         break;
       default:
         console.error(`未知命令: ${command}`);
