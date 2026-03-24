@@ -1,6 +1,6 @@
 {
   "name": "@snailuu/ccs",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "CLI sync tool for MCP, Skills, and Prompts across AI clients (Claude, Codex, Gemini, OpenCode)",
   "type": "module",
   "bin": {
