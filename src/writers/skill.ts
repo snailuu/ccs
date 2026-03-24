@@ -26,7 +26,8 @@ export interface SkillSyncResult {
 
 export function writeSkills(
   entries: SkillMeta[],
-  dryRun: boolean
+  dryRun: boolean,
+  targetApps?: AppName[]
 ): SkillSyncResult {
   const result: SkillSyncResult = { skipped: [], pending: [], linked: [] };
 
@@ -35,7 +36,7 @@ export function writeSkills(
 
     if (existsSync(ssotPath)) {
       // SSOT 已有该 skill，尝试同步 app 链接
-      const linked = syncAppLinks(skill, ssotPath, dryRun);
+      const linked = syncAppLinks(skill, ssotPath, dryRun, targetApps);
       if (linked.length > 0) result.linked.push(...linked);
       else result.skipped.push(skill.directory);
     } else {
@@ -51,9 +52,10 @@ export function writeSkills(
 function syncAppLinks(
   skill: SkillMeta,
   ssotPath: string,
-  dryRun: boolean
+  dryRun: boolean,
+  targetApps?: AppName[]
 ): string[] {
-  const apps: AppName[] = ["claude", "codex", "gemini", "opencode"];
+  const apps: AppName[] = targetApps ?? ["claude", "codex", "gemini", "opencode"];
   const linked: string[] = [];
 
   for (const app of apps) {

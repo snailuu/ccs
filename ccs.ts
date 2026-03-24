@@ -6,24 +6,23 @@
  * 支持 GitHub Gist / WebDAV / 本地文件 三种后端
  *
  * 用法:
- *   ccs push              导出本机配置并上传
- *   ccs sync              交互式选择并同步云端配置
+ *   ccs push              采集本机配置并上传云端
+ *   ccs sync              从云端拉取并应用配置到指定 CLI 工具
  *   ccs status            显示本机当前配置摘要
  *   ccs config            查看/设置同步后端
  *   ccs diff              预览本机与云端的差异
  */
 
 import { pushCommand } from "./src/commands/push.ts";
+import { syncCommand } from "./src/commands/sync.ts";
 import { statusCommand } from "./src/commands/status.ts";
 import { configCommand } from "./src/commands/config.ts";
 import { diffCommand } from "./src/commands/diff.ts";
-import { syncCommand } from "./src/commands/sync.ts";
 
 declare const __APP_VERSION__: string;
 
 function getVersion(): string {
   if (typeof __APP_VERSION__ !== "undefined") return __APP_VERSION__;
-  // 开发模式：从 package.json 读取
   try {
     const { readFileSync } = require("node:fs") as typeof import("node:fs");
     const { resolve } = require("node:path") as typeof import("node:path");
@@ -38,8 +37,8 @@ function printHelp() {
   console.log(`ccs v${VERSION} - CC Switch Sync CLI
 
 使用方法:
-  ccs push [--dry-run]      导出本机配置并上传到云端
-  ccs sync                  从云端拉取并交互式选择同步内容
+  ccs push [--dry-run]      采集本机配置并上传到云端
+  ccs sync                  从云端拉取并应用配置到指定 CLI 工具
   ccs status                显示本机当前配置摘要
   ccs diff                  预览本机与云端的差异
   ccs config                查看同步后端配置
@@ -56,12 +55,15 @@ function printHelp() {
   webdav   WebDAV 服务（如 Nextcloud、坚果云）
   local    本地文件（手动通过网盘同步）
 
+工作流:
+  ccs push                  本机 CLI 配置 → 云端
+  ccs sync                  云端 → 选择条目 → 选择目标 CLI → 写入
+
 示例:
   ccs config set backend gist
   ccs config set gist.token ghp_xxxx
   ccs push
   ccs sync
-  ccs push --only mcp,prompt
 `);
 }
 
@@ -80,8 +82,6 @@ async function main() {
 
   const command = args[0];
   const restArgs = args.slice(1);
-
-  // 解析公共 flags
   const flags = parseFlags(restArgs);
 
   try {
@@ -115,7 +115,7 @@ async function main() {
 
 export interface Flags {
   dryRun: boolean;
-  only: string[] | null; // null = all
+  only: string[] | null;
   verbose: boolean;
 }
 

@@ -16,7 +16,8 @@ const APP_PROMPT_PATH: Record<AppName, () => string> = {
 
 export function writePrompts(
   entries: PromptEntry[],
-  dryRun: boolean
+  dryRun: boolean,
+  targetApps?: AppName[]
 ): Record<AppName, boolean> {
   const result: Record<AppName, boolean> = {
     claude: false,
@@ -26,6 +27,7 @@ export function writePrompts(
   };
 
   for (const entry of entries) {
+    if (targetApps && !targetApps.includes(entry.app)) continue;
     const getter = APP_PROMPT_PATH[entry.app];
     if (!getter) continue;
     const path = getter();

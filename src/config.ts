@@ -64,6 +64,30 @@ export function writeConfig(config: CcsConfig): void {
   writeFileSync(getConfigPath(), JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
+// ---- Bundle 缓存 ----
+
+export function getBundlePath(): string {
+  return join(getCcsDir(), "bundle.json");
+}
+
+export function readCachedBundle(): import("./bundle.ts").SyncBundle | null {
+  const path = getBundlePath();
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedBundle(bundle: import("./bundle.ts").SyncBundle): void {
+  const dir = getCcsDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(getBundlePath(), JSON.stringify(bundle, null, 2) + "\n", "utf-8");
+}
+
+// ---- 后端 ----
+
 export function requireBackend(config: CcsConfig): SyncBackend {
   if (!config.backend) {
     throw new Error(

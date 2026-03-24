@@ -4,9 +4,45 @@
  */
 
 import * as p from "@clack/prompts";
+import { existsSync } from "node:fs";
 import type { McpEntry } from "./readers/mcp.ts";
 import type { PromptEntry } from "./readers/prompt.ts";
 import type { SkillMeta } from "./readers/skill.ts";
+import { Paths, ALL_APPS, type AppName } from "./readers/paths.ts";
+
+// ============================================================
+// 客户端选择器
+// ============================================================
+
+const APP_LABELS: Record<AppName, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  gemini: "Gemini CLI",
+  opencode: "OpenCode",
+};
+
+export async function selectTargetApps(): Promise<AppName[] | null> {
+  // 检测已安装的客户端
+  const detected = ALL_APPS.filter((app) => existsSync(Paths[app].dir()));
+
+  const options = ALL_APPS.map((app) => {
+    const installed = detected.includes(app);
+    return {
+      value: app,
+      label: APP_LABELS[app],
+      hint: installed ? Paths[app].dir() : "未检测到",
+    };
+  });
+
+  const result = await p.multiselect({
+    message: "同步到哪些客户端？",
+    options,
+    initialValues: detected,
+    required: true,
+  });
+  if (p.isCancel(result)) return null;
+  return result;
+}
 
 // ============================================================
 // 带全选/自定义的 multiselect 流程

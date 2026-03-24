@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { McpEntry } from "../readers/mcp.ts";
-import { Paths } from "../readers/paths.ts";
+import { Paths, ALL_APPS, type AppName } from "../readers/paths.ts";
 
 // ---- 工具函数 ----
 
@@ -105,12 +105,14 @@ function writeOpencodeMcp(entries: McpEntry[], dryRun: boolean): number {
 
 export function writeMcp(
   entries: McpEntry[],
-  dryRun: boolean
+  dryRun: boolean,
+  targetApps?: AppName[]
 ): { claude: number; codex: number; gemini: number; opencode: number } {
+  const apps = targetApps ?? ALL_APPS;
   return {
-    claude: writeClaudeMcp(entries, dryRun),
-    codex: writeCodexMcp(entries, dryRun),
-    gemini: writeGeminiMcp(entries, dryRun),
-    opencode: writeOpencodeMcp(entries, dryRun),
+    claude: apps.includes("claude") ? writeClaudeMcp(entries, dryRun) : 0,
+    codex: apps.includes("codex") ? writeCodexMcp(entries, dryRun) : 0,
+    gemini: apps.includes("gemini") ? writeGeminiMcp(entries, dryRun) : 0,
+    opencode: apps.includes("opencode") ? writeOpencodeMcp(entries, dryRun) : 0,
   };
 }
