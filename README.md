@@ -1,49 +1,81 @@
-# ccs - CC Switch Sync CLI
+# ccs
 
-将 MCP、Skill、Prompt 配置在多台机器间同步的 CLI 工具。
+将 MCP、Skill、Prompt 配置在多台机器之间同步的 CLI 工具，支持
+Claude、Codex、Gemini、OpenCode。
 
-设计理念来自 [cc-switch](https://github.com/farion1231/cc-switch)，将其管理的三类配置抽离为独立的命令行同步工具。
+`ccs` 适合这些场景：
+
+- 新电脑初始化时快速恢复 AI 客户端配置
+- 在工作机、个人机、远程机之间同步常用配置
+- 把 MCP、提示词、Skill 元数据统一存放到 Gist、WebDAV 或本地文件
+
+## 特性
+
+- 同步三类配置：MCP、Prompt、Skill 元数据
+- 支持三种后端：GitHub Gist、WebDAV、本地文件
+- 支持交互式选择与预览，避免误覆盖
+- 支持 `--only` 精确同步 `mcp`、`prompt`、`skill`
+- 单文件二进制分发，适合直接下载使用
+
+> [!IMPORTANT]
+> Skill 目前只同步元数据，不同步实际文件内容。
+> 如果目标机器缺少对应 Skill，`ccs sync` 会提示你手动安装。
 
 ## 安装
 
-```bash
-# 进入 CLI 目录
-cd CLI
+### 一键安装
 
-# 安装依赖（仅开发时需要）
-bun install
-
-# 编译为单文件可执行程序
-bun build ccs.ts --compile --outfile ccs
-
-# 放入 PATH
-sudo mv ccs /usr/local/bin/ccs
-```
-
-## 发布流程
-
-npm 包改为**本地手动发布**，GitHub Actions 只负责在 tag 推送后构建跨平台二进制并创建 GitHub Release。
+安装最新版本：
 
 ```bash
-# 本地发布 npm 包
-npm publish --access public
+curl -fsSL https://sh.snailuu.cn/ccs/install.sh | bash
 ```
 
-- 发布 npm 包前，先确认本机 `npm whoami` 可用，必要时执行 `npm login`
-- 推送版本 tag 后，`.github/workflows/release.yml` 会自动构建二进制并上传到 GitHub Release
-- GitHub Actions 不再执行 `npm publish`
+指定安装目录：
+
+```bash
+curl -fsSL https://sh.snailuu.cn/ccs/install.sh | CCS_INSTALL_DIR="$HOME/.local/bin" bash
+```
+
+### 手动下载二进制
+
+最新版本下载地址：
+
+- macOS Apple Silicon: [ccs-darwin-arm64](https://sh.snailuu.cn/ccs/latest/ccs-darwin-arm64)
+- macOS Intel: [ccs-darwin-x64](https://sh.snailuu.cn/ccs/latest/ccs-darwin-x64)
+- Linux x64: [ccs-linux-x64](https://sh.snailuu.cn/ccs/latest/ccs-linux-x64)
+- Linux ARM64: [ccs-linux-arm64](https://sh.snailuu.cn/ccs/latest/ccs-linux-arm64)
+- Windows x64: [ccs-windows-x64.exe](https://sh.snailuu.cn/ccs/latest/ccs-windows-x64.exe)
+
+示例：
+
+```bash
+curl -fsSL -o ccs https://sh.snailuu.cn/ccs/latest/ccs-darwin-arm64
+chmod +x ccs
+mv ccs "$HOME/.local/bin/ccs"
+```
 
 ## 快速开始
 
 ### 1. 配置同步后端
 
-**GitHub Gist（推荐）**
+推荐先用交互式向导：
+
 ```bash
-ccs config set backend gist
-ccs config set gist.token ghp_your_token_here
+ccs config
 ```
 
-**WebDAV（如 Nextcloud、坚果云）**
+也可以直接通过命令设置。
+
+GitHub Gist：
+
+```bash
+ccs config set backend gist
+ccs config set gist.token ghp_xxxxx
+```
+
+WebDAV：
+
 ```bash
 ccs config set backend webdav
 ccs config set webdav.url https://your-webdav-server.com/dav
@@ -51,95 +83,127 @@ ccs config set webdav.username youruser
 ccs config set webdav.password yourpass
 ```
 
-**本地文件（手动网盘同步）**
+本地文件：
+
 ```bash
 ccs config set backend local
 ccs config set local.path ~/Dropbox/ccs-bundle.json
 ```
 
-### 2. 推送本机配置
+### 2. 推送当前机器配置
 
 ```bash
 ccs push
 ```
 
-### 3. 在另一台机器上拉取
+只推送部分内容：
 
 ```bash
-# 先配置相同的后端
-ccs config set backend gist
-ccs config set gist.token ghp_your_token_here
-ccs config set gist.id <gist_id_from_push_output>
-
-# 预览差异
-ccs diff
-
-# 应用配置
-ccs pull
+ccs push --only mcp,prompt
 ```
+
+预览但不上传：
+
+```bash
+ccs push --dry-run
+```
+
+### 3. 在另一台机器上同步
+
+```bash
+ccs diff
+ccs sync
+```
+
+> [!NOTE]
+> `sync` 是实际的拉取并写入命令。它会先从云端读取 bundle，再让你选择同步类型、条目和目标客户端。
 
 ## 命令
 
 | 命令 | 说明 |
-|------|------|
-| `ccs push` | 导出本机配置并上传云端 |
-| `ccs pull` | 从云端下载并应用配置 |
-| `ccs status` | 显示本机配置摘要 |
-| `ccs diff` | 预览本机与云端的差异 |
-| `ccs config` | 查看同步配置 |
-| `ccs config set <k> <v>` | 设置配置项 |
+| --- | --- |
+| `ccs push` | 采集本机配置并上传到云端 |
+| `ccs sync` | 从云端拉取并应用配置到目标客户端 |
+| `ccs status` | 显示本机当前配置摘要 |
+| `ccs diff` | 预览本机与云端配置差异 |
+| `ccs config` | 启动交互式配置向导 |
+| `ccs config show` | 显示当前后端配置 |
+| `ccs config set <key> <value>` | 通过脚本方式设置配置项 |
 
-### 选项
+常用选项：
 
 | 选项 | 说明 |
-|------|------|
-| `--dry-run` | 预览操作，不实际写入文件 |
-| `--only mcp,skill,prompt` | 只同步指定类型（逗号分隔）|
-| `--verbose` | 显示详细日志 |
+| --- | --- |
+| `--help`, `-h` | 显示帮助 |
+| `--version`, `-v` | 显示版本 |
+| `--only mcp,skill,prompt` | 只操作指定类型，适用于 `push` 和 `sync` |
+| `--dry-run` | 仅预览，不实际上传，适用于 `push` |
 
-## 同步的数据
+## 同步内容
 
-### MCP 服务器
-读取各客户端的 MCP 配置文件：
-- Claude: `~/.claude.json` → `mcpServers`
-- Codex: `~/.codex/config.toml` → `[mcp_servers.*]`
-- Gemini: `~/.gemini/settings.json` → `mcpServers`
-- OpenCode: `~/.config/opencode/opencode.json` → `mcp`
+### MCP
 
-### Prompt 文件
-读取各客户端的系统提示文件：
+读取这些客户端中的 MCP 配置：
+
+- Claude: `~/.claude.json`
+- Codex: `~/.codex/config.toml`
+- Gemini: `~/.gemini/settings.json`
+- OpenCode: `~/.config/opencode/opencode.json`
+
+### Prompt
+
+读取这些提示词文件：
+
 - Claude: `~/.claude/CLAUDE.md`
 - Codex: `~/.codex/AGENTS.md`
 - Gemini: `~/.gemini/GEMINI.md`
 - OpenCode: `~/.config/opencode/AGENTS.md`
 
 ### Skill 元数据
-只同步元数据（目录名、仓库信息），**不同步文件内容**。
-目标机器上 SSOT 未安装的 skill 会在 `ccs pull` 后显示待安装列表，
-需在 cc-switch 中手动安装或使用 `agents` CLI 安装。
 
-SSO 目录：`~/.cc-switch/skills/`
+同步内容包括：
+
+- Skill 目录名
+- `SKILL.md` 中解析出的名称和描述
+- 仓库来源信息
+- 在哪些客户端中启用
+
+不包含：
+
+- Skill 目录内的实际文件
+- 仓库克隆内容
+- 运行时生成的缓存
+
+## 下载地址
+
+### 安装脚本
+
+- 默认安装脚本: [install.sh](https://sh.snailuu.cn/ccs/install.sh)
+- Latest 安装脚本: [latest/install.sh](https://sh.snailuu.cn/ccs/latest/install.sh)
+
+### Latest
+
+| 平台 | 地址 |
+| --- | --- |
+| macOS Apple Silicon | [ccs-darwin-arm64](https://sh.snailuu.cn/ccs/latest/ccs-darwin-arm64) |
+| macOS Intel | [ccs-darwin-x64](https://sh.snailuu.cn/ccs/latest/ccs-darwin-x64) |
+| Linux x64 | [ccs-linux-x64](https://sh.snailuu.cn/ccs/latest/ccs-linux-x64) |
+| Linux ARM64 | [ccs-linux-arm64](https://sh.snailuu.cn/ccs/latest/ccs-linux-arm64) |
+| Windows x64 | [ccs-windows-x64.exe](https://sh.snailuu.cn/ccs/latest/ccs-windows-x64.exe) |
 
 ## Bundle 格式
 
-云端存储的 JSON 文件（`ccs-bundle.json`）结构：
+云端存储的 bundle 会缓存到本地 `~/.ccs/bundle.json`，结构如下：
 
 ```json
 {
   "version": "1",
   "pushedAt": "2026-03-23T10:00:00.000Z",
   "hostname": "my-macbook",
-  "mcp": [...],
-  "prompts": [...],
-  "skills": [...]
+  "mcp": [],
+  "prompts": [],
+  "skills": []
 }
 ```
 
-## 与 cc-switch 的关系
-
-`ccs` 是 cc-switch 的 **无 GUI 命令行补充工具**，适用于：
-- 无法安装 cc-switch 的 Linux 服务器
-- CI/CD 环境中的配置分发
-- 多机器快速同步场景
-
-两者独立运行，`ccs` 直接读写各客户端配置文件，不依赖 cc-switch 数据库。
+配置文件位于 `~/.ccs/config.json`。
