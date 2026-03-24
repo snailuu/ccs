@@ -9,8 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  # ── 跨平台二进制构建 + GitHub Release ───────
-  build-binaries:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +31,7 @@ jobs:
           bun build ccs.ts --compile --target=bun-linux-arm64 --outfile dist/ccs-linux-arm64
           bun build ccs.ts --compile --target=bun-windows-x64 --outfile dist/ccs-windows-x64.exe
 
+      # ── GitHub Release ───────
       - name: Create checksums
         run: |
           cd dist
@@ -48,3 +48,25 @@ jobs:
             dist/ccs-windows-x64.exe
             dist/checksums.txt
           generate_release_notes: true
+
+      # ── 上传到又拍云 CDN ───────
+      - name: Upload to Upyun CDN
+        uses: snailuu/upyun-sh-upload@v1
+        with:
+          service: ccs
+          version: ${{ github.ref_name }}
+          files: |
+            dist/ccs-darwin-arm64
+            dist/ccs-darwin-x64
+            dist/ccs-linux-x64
+            dist/ccs-linux-arm64
+            dist/ccs-windows-x64.exe
+            install.sh
+          bucket: ${{ secrets.UPYUN_BUCKET }}
+          operator: ${{ secrets.UPYUN_OPERATOR }}
+          password: ${{ secrets.UPYUN_PASSWORD }}
+          cdn_base_url: ${{ secrets.UPYUN_CDN_BASE_URL }}
+          latest: true
+          upload_install_sh: true
+          generate_checksums: true
+          overwrite: true
