@@ -13,6 +13,59 @@ import type { Manifest, SkillPackage } from "../manifest.ts";
 
 const DEFAULT_BASE_PATH = "/ccs-sync";
 
+function normalizeRemotePath(path: string): string {
+  const normalized = path.trim().replace(/\/{2,}/g, "/");
+  if (!normalized) return "/";
+  return normalized.startsWith("/") ? normalized : `/${normalized}`;
+}
+
+function extractRemotePathFromHref(href: string, basePath: string): string {
+  let path = decodeURIComponent(href.trim());
+
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      path = new URL(path).pathname;
+    } catch {
+      // 保留原值，后续继续做 basePath 截断
+    }
+  }
+
+  const basePathIndex = path.indexOf(basePath);
+  if (basePathIndex !== -1) {
+    path = path.slice(basePathIndex + basePath.length);
+  }
+
+  return normalizeRemotePath(path);
+}
+
+function collectFilePathsFromPropfind(xml: string, basePath: string, dirPath: string): string[] {
+  const normalizedDirPath = normalizeRemotePath(dirPath).replace(/\/$/, "");
+  const responsePattern = /<(?:[\w.-]+:)?response(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?response>/gi;
+  const hrefPattern = /<(?:[\w.-]+:)?href(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?href>/i;
+  const collectionPattern = /<(?:[\w.-]+:)?collection(?:\s[^>]*)?\/?>/i;
+
+  const files: string[] = [];
+
+  for (const match of xml.matchAll(responsePattern)) {
+    const responseXml = match[1];
+    const hrefMatch = responseXml.match(hrefPattern);
+    if (!hrefMatch) continue;
+
+    const remotePath = extractRemotePathFromHref(hrefMatch[1], basePath);
+    const isCollection = collectionPattern.test(responseXml);
+
+    if (isCollection) continue;
+    if (remotePath === normalizedDirPath) continue;
+    if (remotePath === `${normalizedDirPath}/`) continue;
+    if (remotePath.endsWith("/")) continue;
+    if (!remotePath.startsWith(`${normalizedDirPath}/`)) continue;
+
+    files.push(remotePath);
+  }
+
+  return files;
+}
+
 export class WebDavClient {
   private readonly basePath: string;
 
@@ -155,25 +208,6 @@ export class WebDavClient {
     if (!res.ok && res.status !== 207) return [];
 
     const xml = await res.text();
-    const files: string[] = [];
-
-    // 从 PROPFIND 响应中提取非目录的 href
-    // 目录的 response 包含 <d:collection/>，文件不包含
-    const responses = xml.split(/<[dD]:response>/g).slice(1);
-    for (const resp of responses) {
-      const hrefMatch = resp.match(/<[dD]:href>([^<]+)<\/[dD]:href>/);
-      const isCollection = /<[dD]:collection\s*\/?>/.test(resp);
-      if (hrefMatch && !isCollection) {
-        let href = decodeURIComponent(hrefMatch[1]);
-        // 从完整 WebDAV href 中提取 basePath 之后的部分
-        const basePathIdx = href.indexOf(this.basePath);
-        if (basePathIdx !== -1) {
-          href = href.slice(basePathIdx + this.basePath.length);
-        }
-        files.push(href);
-      }
-    }
-
-    return files;
+    return collectFilePathsFromPropfind(xml, this.basePath, dirPath);
   }
 }
