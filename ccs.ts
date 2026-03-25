@@ -3,7 +3,7 @@
  * ccs - CC Switch Sync CLI
  *
  * 将 MCP、Skill、Prompt 配置在多台机器间同步
- * 支持 GitHub Gist / WebDAV / 本地文件 三种后端
+ * 通过 WebDAV 后端实现索引 + 按需下载
  *
  * 用法:
  *   ccs push              采集本机配置并上传云端
@@ -12,6 +12,7 @@
  *   ccs config            查看/设置同步后端
  *   ccs diff              预览本机与云端的差异
  *   ccs update            检查并更新到最新版本
+ *   ccs uninstall         卸载 ccs 及配置数据
  */
 
 import { pushCommand } from "./src/commands/push.ts";
@@ -20,6 +21,7 @@ import { statusCommand } from "./src/commands/status.ts";
 import { configCommand } from "./src/commands/config.ts";
 import { diffCommand } from "./src/commands/diff.ts";
 import { updateCommand } from "./src/commands/update.ts";
+import { uninstallCommand } from "./src/commands/uninstall.ts";
 
 declare const __APP_VERSION__: string;
 
@@ -46,6 +48,7 @@ function printHelp() {
   ccs config                查看同步后端配置
   ccs config set <key> <value>  设置同步后端参数
   ccs update                检查并更新到最新版本
+  ccs uninstall             卸载 ccs 及配置数据
 
 选项:
   --help, -h                显示帮助
@@ -53,18 +56,15 @@ function printHelp() {
   --only mcp,skill,prompt   只操作指定类型（push/sync，逗号分隔）
   --dry-run                 预览操作，不实际写入文件（push）
 
-同步后端:
-  gist     GitHub Gist（需设置 GITHUB_TOKEN）
-  webdav   WebDAV 服务（如 Nextcloud、坚果云）
-  local    本地文件（手动通过网盘同步）
-
 工作流:
-  ccs push                  本机 CLI 配置 → 云端
-  ccs sync                  云端 → 选择条目 → 选择目标 CLI → 写入
+  ccs config                配置 WebDAV 后端
+  ccs push                  扫描本机 → 上传索引 + skill 文件
+  ccs sync                  拉取索引 → 选择 → 按需下载 → 写入
 
 示例:
-  ccs config set backend gist
-  ccs config set gist.token ghp_xxxx
+  ccs config set webdav.url https://dav.jianguoyun.com/dav
+  ccs config set webdav.username your@email.com
+  ccs config set webdav.password app_secret
   ccs push
   ccs sync
 `);
@@ -106,6 +106,9 @@ async function main() {
         break;
       case "update":
         await updateCommand(VERSION);
+        break;
+      case "uninstall":
+        await uninstallCommand();
         break;
       default:
         console.error(`未知命令: ${command}`);

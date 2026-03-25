@@ -1,83 +1,139 @@
 /**
- * 读取各 AI 客户端的 Skill 元数据
+ * 扫描本机所有 Skill
  *
- * 同步策略：只同步元数据（仓库地址/目录），目标机器重新安装
+ * 扫描来源（对齐 cc-switch Tauri 后端 scan_unmanaged 逻辑）：
+ *   1. ~/.agents/skills/ — agents CLI canonical 目录
+ *   2. ~/.cc-switch/skills/ — 旧 SSOT
+ *   3. 各 agent 的 globalSkillsDir — 跳过 symlink，只收集独立目录
  *
- * Skill 目录结构（SSOT: ~/.cc-switch/skills/<name>/SKILL.md）
- * 各应用目录为 symlink 或 copy：
- *   ~/.claude/skills/<name>/
- *   ~/.codex/skills/<name>/
- *   ~/.gemini/skills/<name>/
- *   ~/.config/opencode/skills/<name>/
+ * 以 directory 名去重，先发现的优先，记录 foundIn。
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
-import { Paths, type AppName } from "./paths.ts";
+import { existsSync, readdirSync, readFileSync, lstatSync } from "node:fs";
+import { join, relative } from "node:path";
+import {
+  CANONICAL_SKILLS_DIR, LEGACY_SSOT_DIR, SKILL_LOCK_PATH,
+  AGENTS, ALL_AGENT_NAMES,
+} from "./paths.ts";
+import type { SkillIndex, SkillPackage, SkillFile } from "../manifest.ts";
 
-export interface SkillMeta {
-  /** 目录名（安装名） */
+// ============================================================
+// 内部类型：扫描结果（含文件内容）
+// ============================================================
+
+export interface ScannedSkill {
   directory: string;
-  /** 从 SKILL.md 解析的显示名称 */
   name: string;
-  /** 从 SKILL.md 解析的描述 */
   description: string;
-  /** 仓库信息（来自 ~/.agents/.skill-lock.json 或 SKILL.md header） */
-  repo?: {
-    owner: string;
-    name: string;
-    branch?: string;
-  };
-  /** 该 skill 在哪些应用中启用 */
-  apps: {
-    claude: boolean;
-    codex: boolean;
-    gemini: boolean;
-    opencode: boolean;
-  };
+  repo?: { owner: string; name: string; branch?: string };
+  sourceUrl?: string;
+  sourceType?: "github" | "local" | "unknown";
+  agents: Record<string, boolean>;
+  foundIn: string[];
+  /** skill 目录的绝对路径 */
+  path: string;
+  files: SkillFile[];
 }
 
-const SSOT_DIR = join(homedir(), ".cc-switch", "skills");
+// ============================================================
+// 递归读取目录
+// ============================================================
 
-/** 从 SKILL.md 提取 name 和 description */
-function parseSkillMd(
-  path: string,
-  fallbackName: string
-): { name: string; description: string } {
+const EXCLUDE_DIRS = new Set([".git", "__pycache__", "node_modules"]);
+
+function readDirRecursive(dirPath: string, basePath: string = dirPath): SkillFile[] {
+  const files: SkillFile[] = [];
+  if (!existsSync(dirPath)) return files;
+
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") && entry.name !== ".agents") continue;
+    const fullPath = join(dirPath, entry.name);
+
+    if (entry.isDirectory()) {
+      if (EXCLUDE_DIRS.has(entry.name)) continue;
+      files.push(...readDirRecursive(fullPath, basePath));
+    } else if (entry.isFile()) {
+      try {
+        const content = readFileSync(fullPath, "utf-8");
+        files.push({ path: relative(basePath, fullPath), content });
+      } catch {
+        // 跳过无法读取的文件
+      }
+    }
+  }
+
+  return files;
+}
+
+// ============================================================
+// SKILL.md 解析
+// ============================================================
+
+interface SkillMdInfo {
+  name: string;
+  description: string;
+  fmSource?: string;
+}
+
+function parseSkillMd(path: string, fallbackName: string): SkillMdInfo {
   if (!existsSync(path)) return { name: fallbackName, description: "" };
   const text = readFileSync(path, "utf-8");
-  const lines = text.split("\n");
-  // 第一个 # 开头行作为名称
+
+  let fmSource: string | undefined;
+  let body = text;
+  if (text.startsWith("---")) {
+    const endIdx = text.indexOf("\n---", 3);
+    if (endIdx !== -1) {
+      const fm = text.slice(3, endIdx);
+      const sourceMatch = fm.match(/^source:\s*(.+)$/m);
+      if (sourceMatch) fmSource = sourceMatch[1].trim().replace(/^["']|["']$/g, "");
+      body = text.slice(endIdx + 4);
+    }
+  }
+
+  const lines = body.split("\n");
   const nameLine = lines.find((l) => l.startsWith("# "));
   const name = nameLine ? nameLine.replace(/^#\s+/, "").trim() : fallbackName;
-  // 第一段非空、非标题的文字作为描述
   let desc = "";
   for (const line of lines) {
     if (line.startsWith("#") || !line.trim()) continue;
     desc = line.trim();
     break;
   }
-  return { name, description: desc };
+  return { name, description: desc, fmSource };
 }
 
-/** 解析 ~/.agents/.skill-lock.json，获取仓库信息 */
-function parseSkillLock(): Record<string, { owner: string; name: string; branch?: string }> {
-  const lockPath = join(homedir(), ".agents", ".skill-lock.json");
-  if (!existsSync(lockPath)) return {};
+// ============================================================
+// Lock 文件解析
+// ============================================================
+
+interface LockEntry {
+  owner: string;
+  name: string;
+  branch?: string;
+  sourceUrl?: string;
+}
+
+function parseSkillLock(): Record<string, LockEntry> {
+  if (!existsSync(SKILL_LOCK_PATH)) return {};
   try {
-    const json = JSON.parse(readFileSync(lockPath, "utf-8"));
-    const result: Record<string, { owner: string; name: string; branch?: string }> = {};
-    const skills = json?.skills ?? {};
-    for (const [dirName, skill] of Object.entries(skills) as [string, any][]) {
-      if (skill.source_type !== "github" || !skill.source) continue;
-      const [owner, repo] = skill.source.split("/");
-      if (!owner || !repo) continue;
-      result[dirName] = {
-        owner,
-        name: repo,
-        branch: skill.branch ?? skill.source_branch ?? undefined,
-      };
+    const json = JSON.parse(readFileSync(SKILL_LOCK_PATH, "utf-8"));
+    const result: Record<string, LockEntry> = {};
+    for (const [dirName, skill] of Object.entries(json?.skills ?? {}) as [string, any][]) {
+      const source: string = skill.source ?? "";
+      const sourceType: string = skill.sourceType ?? skill.source_type ?? "";
+      const sourceUrl: string = skill.sourceUrl ?? skill.source_url ?? "";
+
+      if (sourceType === "github" && source) {
+        const [owner, repo] = source.split("/");
+        if (owner && repo) {
+          result[dirName] = {
+            owner, name: repo,
+            branch: skill.branch ?? skill.sourceBranch ?? skill.source_branch ?? undefined,
+            sourceUrl,
+          };
+        }
+      }
     }
     return result;
   } catch {
@@ -85,38 +141,143 @@ function parseSkillLock(): Record<string, { owner: string; name: string; branch?
   }
 }
 
-/** 检查某个 app 的 skills 目录中是否有该 skill */
-function isSkillEnabledForApp(directory: string, app: AppName): boolean {
-  const appSkillsDir = Paths[app].skills();
-  return existsSync(join(appSkillsDir, directory));
-}
+// ============================================================
+// 来源检测
+// ============================================================
 
-/** 从 SSOT 扫描所有已安装的 skill 元数据 */
-export function readAllSkills(): SkillMeta[] {
-  if (!existsSync(SSOT_DIR)) return [];
-
-  const lock = parseSkillLock();
-  const entries: SkillMeta[] = [];
-
-  for (const dir of readdirSync(SSOT_DIR, { withFileTypes: true })) {
-    if (!dir.isDirectory()) continue;
-    const directory = dir.name;
-    const skillMdPath = join(SSOT_DIR, directory, "SKILL.md");
-    const { name, description } = parseSkillMd(skillMdPath, directory);
-
-    entries.push({
-      directory,
-      name,
-      description,
-      repo: lock[directory],
-      apps: {
-        claude: isSkillEnabledForApp(directory, "claude"),
-        codex: isSkillEnabledForApp(directory, "codex"),
-        gemini: isSkillEnabledForApp(directory, "gemini"),
-        opencode: isSkillEnabledForApp(directory, "opencode"),
-      },
-    });
+function resolveSource(
+  directory: string,
+  lock: Record<string, LockEntry>,
+  fmSource?: string,
+): Pick<ScannedSkill, "repo" | "sourceUrl" | "sourceType"> {
+  const lockEntry = lock[directory];
+  if (lockEntry) {
+    return {
+      repo: { owner: lockEntry.owner, name: lockEntry.name, branch: lockEntry.branch },
+      sourceUrl: lockEntry.sourceUrl,
+      sourceType: "github",
+    };
   }
 
-  return entries;
+  if (fmSource) {
+    const parts = fmSource.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").split("/");
+    if (parts.length >= 2) {
+      return {
+        repo: { owner: parts[0], name: parts[1] },
+        sourceUrl: fmSource.startsWith("http") ? fmSource : `https://github.com/${parts[0]}/${parts[1]}`,
+        sourceType: "github",
+      };
+    }
+  }
+
+  return { sourceType: "local" };
+}
+
+// ============================================================
+// Agent 启用检测
+// ============================================================
+
+function detectSkillAgents(directory: string): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
+  for (const agentName of ALL_AGENT_NAMES) {
+    const agent = AGENTS[agentName];
+    result[agentName] = existsSync(join(agent.globalSkillsDir, directory));
+  }
+  return result;
+}
+
+// ============================================================
+// 多源扫描
+// ============================================================
+
+/** 扫描单个目录，返回其中的 skill 目录名列表（跳过 symlink） */
+function listSkillDirs(baseDir: string, skipSymlinks: boolean): string[] {
+  if (!existsSync(baseDir)) return [];
+  try {
+    return readdirSync(baseDir, { withFileTypes: true })
+      .filter((d) => {
+        if (skipSymlinks && d.isSymbolicLink()) return false;
+        return d.isDirectory() || d.isSymbolicLink();
+      })
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+}
+
+/** 扫描本机所有 skill 来源，合并去重 */
+export function scanAllSkills(): ScannedSkill[] {
+  const lock = parseSkillLock();
+  const seen = new Map<string, ScannedSkill>();
+
+  // 定义扫描来源（顺序决定优先级）
+  const sources: { label: string; dir: string; skipSymlinks: boolean }[] = [
+    { label: "agents", dir: CANONICAL_SKILLS_DIR, skipSymlinks: false },
+    { label: "cc-switch", dir: LEGACY_SSOT_DIR, skipSymlinks: false },
+  ];
+
+  // 各 non-universal agent 的独立目录（跳过 symlink 避免重复）
+  for (const agentName of ALL_AGENT_NAMES) {
+    const agent = AGENTS[agentName];
+    if (!agent.isUniversal) {
+      sources.push({ label: agentName, dir: agent.globalSkillsDir, skipSymlinks: true });
+    }
+  }
+
+  for (const { label, dir, skipSymlinks } of sources) {
+    for (const dirName of listSkillDirs(dir, skipSymlinks)) {
+      if (seen.has(dirName)) {
+        // 已发现，只追加 foundIn
+        seen.get(dirName)!.foundIn.push(label);
+        continue;
+      }
+
+      const skillDir = join(dir, dirName);
+      const skillMdPath = join(skillDir, "SKILL.md");
+      const { name, description, fmSource } = parseSkillMd(skillMdPath, dirName);
+      const source = resolveSource(dirName, lock, fmSource);
+
+      seen.set(dirName, {
+        directory: dirName,
+        name,
+        description,
+        ...source,
+        agents: detectSkillAgents(dirName),
+        foundIn: [label],
+        path: skillDir,
+        files: readDirRecursive(skillDir),
+      });
+    }
+  }
+
+  return Array.from(seen.values());
+}
+
+// ============================================================
+// 转换为 Manifest 类型
+// ============================================================
+
+/** 将 ScannedSkill 转换为 SkillIndex（元数据，不含文件） */
+export function toSkillIndex(skill: ScannedSkill): SkillIndex {
+  const totalSize = skill.files.reduce((sum, f) => sum + Buffer.byteLength(f.content, "utf-8"), 0);
+  return {
+    directory: skill.directory,
+    name: skill.name,
+    description: skill.description,
+    repo: skill.repo,
+    sourceUrl: skill.sourceUrl,
+    sourceType: skill.sourceType,
+    agents: skill.agents,
+    foundIn: skill.foundIn,
+    fileCount: skill.files.length,
+    totalSize,
+  };
+}
+
+/** 将 ScannedSkill 转换为 SkillPackage（含完整文件） */
+export function toSkillPackage(skill: ScannedSkill): SkillPackage {
+  return {
+    directory: skill.directory,
+    files: skill.files,
+  };
 }

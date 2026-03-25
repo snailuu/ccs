@@ -89,11 +89,12 @@ export function resolveInstalledBinaryPath(
   argv0Value = process.argv[0] ?? ""
 ): string {
   const execBase = basename(execPathValue).toLowerCase();
-  const argvBase = basename(argv0Value).toLowerCase();
-  const isBunRuntime = execBase === "bun" || execBase === "bun.exe" || argvBase === "bun" || argvBase === "bun.exe";
+  // 注意：bun 编译的二进制中 process.argv[0] 始终返回 "bun"，不能用于判断
+  // 只通过 process.execPath 判断是否是 bun runtime（未编译）
+  const isBunRuntime = execBase === "bun" || execBase === "bun.exe";
 
-  if (currentVersion === "dev" || isBunRuntime) {
-    throw new Error("当前不是通过 sh.snailuu.cn 安装的单文件二进制，无法自动更新");
+  if (isBunRuntime) {
+    throw new Error("当前通过 bun 运行源码，不是编译后的二进制，无法自动更新");
   }
 
   if (execBase !== "ccs" && execBase !== "ccs.exe") {

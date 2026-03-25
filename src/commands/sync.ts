@@ -1,77 +1,79 @@
 /**
- * ccs sync - 从云端下载配置并应用到 CLI 工具
+ * ccs sync - 从 WebDAV 拉取索引，按需下载并应用配置
  *
  * 流程：
- *   1. 从云端拉取 bundle → 缓存到本地
- *   2. 选择类别（MCP / Prompt / Skill）
- *   3. 进入每个类别选择条目
- *   4. 选择目标 CLI 工具
- *   5. 预览 → 确认 → 写入
+ *   1. 拉取 manifest.json（轻量索引）
+ *   2. 选择类别和条目
+ *   3. MCP/Prompt 直接从 manifest 获取
+ *   4. Skill 按需下载 → 写入 canonical → 补 symlink
  */
 
 import * as p from "@clack/prompts";
 import type { Flags } from "../../ccs.ts";
 import type { McpEntry } from "../readers/mcp.ts";
 import type { PromptEntry } from "../readers/prompt.ts";
-import type { SkillMeta } from "../readers/skill.ts";
-import { readConfig, requireBackend, writeConfig, writeCachedBundle } from "../config.ts";
-import { createBackend } from "../backends/index.ts";
+import type { SkillIndex, SkillPackage } from "../manifest.ts";
+import {
+  readConfig, requireBackend, writeConfig,
+  writeCachedManifest, readCachedSkillPackage, writeCachedSkillFiles,
+} from "../config.ts";
+import { createWebDavClient } from "../backends/index.ts";
 import { writeMcp } from "../writers/mcp.ts";
 import { writePrompts } from "../writers/prompt.ts";
-import { writeSkills, formatPendingSkills } from "../writers/skill.ts";
+import { writeSkillPackages } from "../writers/skill.ts";
 import {
   selectMcpEntries, selectPromptEntries, selectSkillEntries,
-  selectTargetApps,
+  selectTargetApps, selectTargetAgents,
   previewMcp, previewPrompts, previewSkills,
 } from "../preview.ts";
 
 export async function syncCommand(flags: Flags): Promise<void> {
   const config = readConfig();
   const backend = requireBackend(config);
+  const client = createWebDavClient(backend);
 
   p.intro("ccs 同步");
 
+  // 1. 拉取索引
   const s = p.spinner();
-  s.start(`正在从 ${backend.type} 后端拉取配置...`);
-  const adapter = createBackend(backend);
-  const bundle = await adapter.read();
-  s.stop("拉取完成");
+  s.start("正在拉取索引...");
+  const manifest = await client.downloadManifest();
+  s.stop("索引拉取完成");
 
-  if (!bundle) {
+  if (!manifest) {
     p.log.error("云端暂无配置，请先在其他机器上运行 ccs push");
     p.outro("已退出");
     process.exit(1);
   }
 
-  // 缓存到本地
-  writeCachedBundle(bundle);
+  writeCachedManifest(manifest);
 
   p.log.info(
-    `云端 bundle:\n` +
-    `  来源机器: ${bundle.hostname}\n` +
-    `  推送时间: ${bundle.pushedAt}\n` +
-    `  MCP: ${bundle.mcp.length} 个 | Prompt: ${bundle.prompts.length} 个应用 | Skill: ${bundle.skills.length} 个`
+    `云端配置:\n` +
+    `  来源机器: ${manifest.hostname}\n` +
+    `  推送时间: ${manifest.pushedAt}\n` +
+    `  MCP: ${manifest.mcp.length} 个 | Prompt: ${manifest.prompts.length} 个 | Skill: ${manifest.skills.length} 个`
   );
 
   config.lastSync = new Date().toISOString();
   writeConfig(config);
 
-  // 选择类别
+  // 2. 选择类别
   let categories: string[];
 
   if (flags.only) {
     categories = flags.only;
   } else {
     const categoryOptions: { value: string; label: string; hint: string }[] = [];
-    if (bundle.mcp.length > 0)
-      categoryOptions.push({ value: "mcp", label: "MCP 服务器", hint: `${bundle.mcp.length} 个` });
-    if (bundle.prompts.length > 0)
-      categoryOptions.push({ value: "prompt", label: "Prompt", hint: `${bundle.prompts.length} 个应用` });
-    if (bundle.skills.length > 0)
-      categoryOptions.push({ value: "skill", label: "Skill", hint: `${bundle.skills.length} 个` });
+    if (manifest.mcp.length > 0)
+      categoryOptions.push({ value: "mcp", label: "MCP 服务器", hint: `${manifest.mcp.length} 个` });
+    if (manifest.prompts.length > 0)
+      categoryOptions.push({ value: "prompt", label: "Prompt", hint: `${manifest.prompts.length} 个` });
+    if (manifest.skills.length > 0)
+      categoryOptions.push({ value: "skill", label: "Skill", hint: `${manifest.skills.length} 个` });
 
     if (categoryOptions.length === 0) {
-      p.log.warn("云端 bundle 为空，没有可同步的内容");
+      p.log.warn("云端配置为空");
       p.outro("已退出");
       return;
     }
@@ -85,66 +87,95 @@ export async function syncCommand(flags: Flags): Promise<void> {
     categories = selected;
   }
 
-  // 选择条目
+  // 3. 选择条目
   let selectedMcp: McpEntry[] = [];
   let selectedPrompts: PromptEntry[] = [];
-  let selectedSkills: SkillMeta[] = [];
+  let selectedSkills: SkillIndex[] = [];
 
   if (categories.includes("mcp")) {
-    const result = await selectMcpEntries(bundle.mcp);
+    const result = await selectMcpEntries(manifest.mcp);
     if (result === null) { p.outro("已取消"); return; }
     selectedMcp = result;
   }
 
   if (categories.includes("prompt")) {
-    const result = await selectPromptEntries(bundle.prompts);
+    const result = await selectPromptEntries(manifest.prompts);
     if (result === null) { p.outro("已取消"); return; }
     selectedPrompts = result;
   }
 
   if (categories.includes("skill")) {
-    const result = await selectSkillEntries(bundle.skills);
+    const result = await selectSkillEntries(manifest.skills);
     if (result === null) { p.outro("已取消"); return; }
     selectedSkills = result;
   }
 
-  // 选择目标客户端
-  const targetApps = await selectTargetApps();
-  if (targetApps === null) { p.outro("已取消"); return; }
+  // 4. 选择目标
+  let targetApps: string[] | null = null;
+  if (selectedMcp.length > 0 || selectedPrompts.length > 0) {
+    targetApps = await selectTargetApps();
+    if (targetApps === null) { p.outro("已取消"); return; }
+  }
 
-  // 预览
+  let targetAgents: string[] | null = null;
+  if (selectedSkills.length > 0) {
+    targetAgents = await selectTargetAgents();
+    if (targetAgents === null) { p.outro("已取消"); return; }
+  }
+
+  // 5. 预览 + 确认
   previewMcp(selectedMcp);
   previewPrompts(selectedPrompts);
   previewSkills(selectedSkills);
-  p.log.step(`目标客户端: ${targetApps.join(", ")}`);
+  if (targetApps) p.log.step(`MCP/Prompt 目标客户端: ${targetApps.join(", ")}`);
+  if (targetAgents) p.log.step(`Skill 目标 Agent: ${targetAgents.join(", ")}`);
 
-  // 确认
-  const confirmed = await p.confirm({
-    message: "确认同步以上配置？",
-  });
+  const confirmed = await p.confirm({ message: "确认同步？" });
   if (p.isCancel(confirmed) || !confirmed) { p.outro("已取消"); return; }
 
-  // 写入
-  if (selectedMcp.length > 0) {
-    const counts = writeMcp(selectedMcp, false, targetApps);
+  // 6. 写入
+  if (selectedMcp.length > 0 && targetApps) {
+    const counts = writeMcp(selectedMcp, false, targetApps as any);
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    p.log.success(`MCP: 写入 ${total} 条 (${targetApps.map((a) => `${a}:${counts[a]}`).join(" ")})`);
+    p.log.success(`MCP: 写入 ${total} 条`);
   }
 
-  if (selectedPrompts.length > 0) {
-    const written = writePrompts(selectedPrompts, false, targetApps);
-    const apps = Object.entries(written)
-      .filter(([, v]) => v)
-      .map(([k]) => k)
-      .join(", ");
-    p.log.success(`Prompt: 写入应用 [${apps || "无"}]`);
+  if (selectedPrompts.length > 0 && targetApps) {
+    const written = writePrompts(selectedPrompts, false, targetApps as any);
+    const apps = Object.entries(written).filter(([, v]) => v).map(([k]) => k).join(", ");
+    p.log.success(`Prompt: 写入 [${apps || "无"}]`);
   }
 
   if (selectedSkills.length > 0) {
-    const result = writeSkills(selectedSkills, false, targetApps);
-    p.log.success(`Skill: 跳过 ${result.skipped.length} 个（已安装），补充链接 ${result.linked.length} 个`);
-    const pending = formatPendingSkills(result.pending);
-    if (pending) p.log.warn(pending);
+    // 按需下载 skill 文件包
+    const total = selectedSkills.length;
+    const packages: SkillPackage[] = [];
+    s.start(`正在下载 ${total} 个 Skill...`);
+    for (let i = 0; i < total; i++) {
+      const skill = selectedSkills[i];
+      let pkg = readCachedSkillPackage(skill.directory);
+      if (pkg) {
+        s.message(`下载 Skill [${i + 1}/${total}] ${skill.directory} (已缓存)`);
+      } else {
+        s.message(`下载 Skill [${i + 1}/${total}] ${skill.directory} (${skill.fileCount} 个文件)`);
+        pkg = await client.downloadSkillPackage(skill.directory);
+        if (!pkg) {
+          p.log.warn(`  跳过 ${skill.directory}（云端文件不存在）`);
+          continue;
+        }
+        writeCachedSkillFiles(pkg);
+      }
+      packages.push(pkg);
+    }
+    s.stop(`${packages.length} 个 Skill 下载完成`);
+
+    // 写入
+    const result = writeSkillPackages(packages, selectedSkills, false, targetAgents ?? undefined);
+    const parts: string[] = [];
+    if (result.installed.length > 0) parts.push(`新安装 ${result.installed.length} 个`);
+    if (result.skipped.length > 0) parts.push(`跳过 ${result.skipped.length} 个（已有）`);
+    if (result.linked.length > 0) parts.push(`补充链接 ${result.linked.length} 个`);
+    if (parts.length > 0) p.log.success(`Skill: ${parts.join("，")}`);
   }
 
   p.outro("同步完成");

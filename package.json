@@ -13,9 +13,11 @@
   ],
   "scripts": {
     "dev": "bun run ccs.ts",
-    "build": "bun build ccs.ts --compile --outfile dist/ccs --define __APP_VERSION__=\"'$(node -p \"require('./package.json').version\")'\"",
+    "build": "bun build ccs.ts --compile --outfile dist/ccs --define __APP_VERSION__=\"\\\"$(node -p 'require(\"./package.json\").version')\\\"\"",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run typecheck",
+    "link:bun": "bun link",
+    "unlink:bun": "bun unlink && rm -f $HOME/.bun/bin/ccs",
     "release": "release-it",
     "release:dry": "release-it --dry-run"
   },

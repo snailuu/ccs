@@ -1,30 +1,26 @@
 /**
- * ccs config - 查看和设置同步后端
+ * ccs config - 查看和设置 WebDAV 同步后端
  *
  * 交互式模式:
  *   ccs config                        启动交互式配置向导
  *
- * 脚本模式 (支持非交互式场景):
- *   ccs config set backend gist       设置后端类型
- *   ccs config set gist.token <tok>   设置 Gist token
+ * 脚本模式:
+ *   ccs config set webdav.url <url>   设置 WebDAV 地址
  *   ccs config show                   显示当前配置
  */
 
 import * as p from "@clack/prompts";
-import { readConfig, writeConfig, type CcsConfig } from "../config.ts";
-import { getConfigPath } from "../config.ts";
+import { readConfig, writeConfig, type CcsConfig, getConfigPath } from "../config.ts";
 
 export async function configCommand(args: string[]): Promise<void> {
   const config = readConfig();
   const sub = args[0];
 
-  // ccs config show → 纯文本展示
   if (sub === "show") {
     showConfig(config);
     return;
   }
 
-  // ccs config set <key> <value> → 脚本模式
   if (sub === "set") {
     if (args.length < 3) {
       console.error("用法: ccs config set <key> <value>");
@@ -32,11 +28,10 @@ export async function configCommand(args: string[]): Promise<void> {
     }
     applySet(config, args[1], args.slice(2).join(" "));
     writeConfig(config);
-    console.log(`✓ 已设置 ${args[1]} = ${maskSecret(args[1], args.slice(2).join(" "))}`);
+    console.log(`已设置 ${args[1]} = ${maskSecret(args[1], args.slice(2).join(" "))}`);
     return;
   }
 
-  // ccs config → 交互式向导
   await interactiveConfig(config);
 }
 
@@ -47,14 +42,13 @@ export async function configCommand(args: string[]): Promise<void> {
 async function interactiveConfig(config: CcsConfig): Promise<void> {
   p.intro("ccs 同步配置");
 
-  // 如果已有配置，先展示
   if (config.backend) {
     showConfigClack(config);
 
     const action = await p.select({
       message: "你想做什么？",
       options: [
-        { value: "reconfigure", label: "重新配置", hint: "修改同步后端设置" },
+        { value: "reconfigure", label: "重新配置", hint: "修改 WebDAV 设置" },
         { value: "reset", label: "重置配置", hint: "清除所有配置" },
         { value: "exit", label: "退出" },
       ],
@@ -70,67 +64,11 @@ async function interactiveConfig(config: CcsConfig): Promise<void> {
     }
   }
 
-  // 选择后端类型
-  const backendType = await p.select({
-    message: "选择同步后端",
-    options: [
-      { value: "gist", label: "GitHub Gist", hint: "推荐，免费，支持版本历史" },
-      { value: "webdav", label: "WebDAV", hint: "Nextcloud / 坚果云 等" },
-      { value: "local", label: "本地文件", hint: "手动通过 iCloud / Dropbox 同步" },
-    ],
-  });
-  if (p.isCancel(backendType)) { p.outro("已取消"); return; }
-
-  switch (backendType) {
-    case "gist":
-      await configureGist(config);
-      break;
-    case "webdav":
-      await configureWebDav(config);
-      break;
-    case "local":
-      await configureLocal(config);
-      break;
-  }
-}
-
-async function configureGist(config: CcsConfig): Promise<void> {
-  const token = await p.text({
-    message: "GitHub Personal Access Token",
-    placeholder: "ghp_xxxxxxxxxxxx",
-    initialValue: config.backend?.type === "gist" ? config.backend.token : "",
-    validate: (v) => (!v?.trim() ? "Token 不能为空" : undefined),
-  });
-  if (p.isCancel(token)) { p.outro("已取消"); return; }
-
-  const existingId =
-    config.backend?.type === "gist" ? config.backend.gistId : undefined;
-
-  let gistId = existingId;
-  if (existingId) {
-    p.log.info(`当前 Gist ID: ${existingId}`);
-  } else {
-    const inputId = await p.text({
-      message: "Gist ID（留空则首次 push 时自动创建）",
-      placeholder: "可选",
-    });
-    if (p.isCancel(inputId)) { p.outro("已取消"); return; }
-    gistId = inputId.trim() || undefined;
-  }
-
-  config.backend = { type: "gist", token: token.trim(), gistId };
-  writeConfig(config);
-
-  p.log.success("GitHub Gist 后端配置完成");
-  p.log.step(gistId
-    ? `Gist ID: ${gistId}`
-    : "首次 push 时将自动创建私有 Gist"
-  );
-  p.outro("运行 ccs push 开始同步");
+  await configureWebDav(config);
 }
 
 async function configureWebDav(config: CcsConfig): Promise<void> {
-  const existing = config.backend?.type === "webdav" ? config.backend : null;
+  const existing = config.backend ?? null;
 
   const result = await p.group({
     url: () =>
@@ -152,9 +90,9 @@ async function configureWebDav(config: CcsConfig): Promise<void> {
       }),
     path: () =>
       p.text({
-        message: "远端存储路径",
-        placeholder: "/ccs-sync/bundle.json",
-        initialValue: existing?.path ?? "/ccs-sync/bundle.json",
+        message: "远端根路径",
+        placeholder: "/ccs-sync",
+        initialValue: existing?.path ?? "/ccs-sync",
       }),
   });
 
@@ -165,66 +103,34 @@ async function configureWebDav(config: CcsConfig): Promise<void> {
     url: result.url.trim(),
     username: result.username?.trim() || undefined,
     password: result.password?.trim() || undefined,
-    path: result.path?.trim() || "/ccs-sync/bundle.json",
+    path: result.path?.trim() || "/ccs-sync",
   };
   writeConfig(config);
 
-  p.log.success("WebDAV 后端配置完成");
-  p.log.step(`地址: ${config.backend.url}`);
-  p.outro("运行 ccs push 开始同步");
-}
-
-async function configureLocal(config: CcsConfig): Promise<void> {
-  const existing = config.backend?.type === "local" ? config.backend : null;
-
-  const filePath = await p.text({
-    message: "Bundle 文件路径",
-    placeholder: "~/iCloud/ccs-bundle.json",
-    initialValue: existing?.path ?? "",
-    validate: (v) => (!v?.trim() ? "路径不能为空" : undefined),
-  });
-  if (p.isCancel(filePath)) { p.outro("已取消"); return; }
-
-  // 展开 ~ 为 HOME
-  const resolved = filePath.trim().replace(/^~/, process.env.HOME ?? "~");
-
-  config.backend = { type: "local", path: resolved };
-  writeConfig(config);
-
-  p.log.success("本地文件后端配置完成");
-  p.log.step(`路径: ${resolved}`);
+  p.log.success("WebDAV 配置完成");
+  p.log.step(`地址: ${config.backend.url}${config.backend.path}`);
   p.outro("运行 ccs push 开始同步");
 }
 
 // ============================================================
-// 在 clack UI 中展示当前配置
+// 展示
 // ============================================================
 
 function showConfigClack(config: CcsConfig): void {
   const b = config.backend;
   if (!b) return;
 
-  const lines: string[] = [`后端类型: ${b.type}`];
-  if (b.type === "gist") {
-    lines.push(`Token: ${b.token ? maskValue(b.token) : "(未设置)"}`);
-    lines.push(`Gist ID: ${b.gistId ?? "(首次 push 后生成)"}`);
-  } else if (b.type === "webdav") {
-    lines.push(`URL: ${b.url}`);
-    lines.push(`用户名: ${b.username ?? "(未设置)"}`);
-    lines.push(`密码: ${b.password ? "***" : "(未设置)"}`);
-    lines.push(`路径: ${b.path ?? "/ccs-sync/bundle.json"}`);
-  } else if (b.type === "local") {
-    lines.push(`路径: ${b.path}`);
-  }
+  const lines: string[] = [
+    `URL: ${b.url}`,
+    `用户名: ${b.username ?? "(未设置)"}`,
+    `密码: ${b.password ? "***" : "(未设置)"}`,
+    `路径: ${b.path ?? "/ccs-sync"}`,
+  ];
   if (config.lastPush) lines.push(`上次 push: ${config.lastPush}`);
   if (config.lastSync) lines.push(`上次 sync: ${config.lastSync}`);
 
   p.log.info("当前配置:\n" + lines.map((l) => `  ${l}`).join("\n"));
 }
-
-// ============================================================
-// 脚本模式辅助
-// ============================================================
 
 function showConfig(config: CcsConfig): void {
   console.log(`配置文件: ${getConfigPath()}\n`);
@@ -234,64 +140,44 @@ function showConfig(config: CcsConfig): void {
     return;
   }
   const b = config.backend;
-  console.log(`后端: ${b.type}`);
-  if (b.type === "gist") {
-    console.log(`  token:   ${b.token ? maskValue(b.token) : "(未设置)"}`);
-    console.log(`  gist.id: ${b.gistId ?? "(首次 push 后自动生成)"}`);
-  } else if (b.type === "webdav") {
-    console.log(`  url:      ${b.url}`);
-    console.log(`  username: ${b.username ?? "(未设置)"}`);
-    console.log(`  password: ${b.password ? "***" : "(未设置)"}`);
-    console.log(`  path:     ${b.path ?? "/ccs-sync/bundle.json"}`);
-  } else if (b.type === "local") {
-    console.log(`  path: ${b.path}`);
-  }
+  console.log(`后端: webdav`);
+  console.log(`  url:      ${b.url}`);
+  console.log(`  username: ${b.username ?? "(未设置)"}`);
+  console.log(`  password: ${b.password ? "***" : "(未设置)"}`);
+  console.log(`  path:     ${b.path ?? "/ccs-sync"}`);
   if (config.lastPush) console.log(`\n上次 push: ${config.lastPush}`);
   if (config.lastSync) console.log(`上次 sync:  ${config.lastSync}`);
 }
 
+// ============================================================
+// 脚本模式
+// ============================================================
+
 function applySet(config: CcsConfig, key: string, value: string): void {
   if (key === "backend") {
-    if (value !== "gist" && value !== "webdav" && value !== "local") {
-      console.error(`不支持的后端类型: ${value}（可选: gist, webdav, local）`);
+    if (value !== "webdav") {
+      console.error(`仅支持 webdav 后端`);
       process.exit(1);
     }
-    if (!config.backend || config.backend.type !== value) {
-      if (value === "gist") config.backend = { type: "gist", token: "" };
-      else if (value === "webdav") config.backend = { type: "webdav", url: "" };
-      else config.backend = { type: "local", path: "" };
-    }
+    if (!config.backend) config.backend = { type: "webdav", url: "" };
     return;
   }
   if (!config.backend) {
-    console.error("请先设置后端类型: ccs config set backend gist|webdav|local");
-    process.exit(1);
+    config.backend = { type: "webdav", url: "" };
   }
-  const b = config.backend as any;
-  if (key === "gist.token") { assertType(b, "gist", key); b.token = value; return; }
-  if (key === "gist.id") { assertType(b, "gist", key); b.gistId = value; return; }
-  if (key === "webdav.url") { assertType(b, "webdav", key); b.url = value; return; }
-  if (key === "webdav.username") { assertType(b, "webdav", key); b.username = value; return; }
-  if (key === "webdav.password") { assertType(b, "webdav", key); b.password = value; return; }
-  if (key === "webdav.path") { assertType(b, "webdav", key); b.path = value; return; }
-  if (key === "local.path") { assertType(b, "local", key); b.path = value; return; }
-  console.error(`未知配置项: ${key}`);
+  const b = config.backend;
+  if (key === "webdav.url") { b.url = value; return; }
+  if (key === "webdav.username") { b.username = value; return; }
+  if (key === "webdav.password") { b.password = value; return; }
+  if (key === "webdav.path") { b.path = value; return; }
+  console.error(`未知配置项: ${key}（可用: webdav.url, webdav.username, webdav.password, webdav.path）`);
   process.exit(1);
 }
 
-function assertType(backend: any, expected: string, key: string): void {
-  if (backend.type !== expected) {
-    console.error(`配置项 ${key} 仅适用于 ${expected} 后端（当前: ${backend.type}）`);
-    process.exit(1);
-  }
-}
-
-function maskValue(v: string): string {
-  if (v.length <= 8) return "***";
-  return v.slice(0, 4) + "..." + v.slice(-4);
-}
-
 function maskSecret(key: string, value: string): string {
-  if (key.includes("token") || key.includes("password")) return maskValue(value);
+  if (key.includes("password")) {
+    if (value.length <= 8) return "***";
+    return value.slice(0, 4) + "..." + value.slice(-4);
+  }
   return value;
 }

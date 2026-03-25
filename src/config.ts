@@ -1,42 +1,47 @@
 /**
  * ccs 配置管理
- * 配置文件存储在 ~/.ccs/config.json
+ *
+ * ~/.ccs/ 目录结构：
+ *   config.json              ← WebDAV 配置 + 时间戳
+ *   manifest.json            ← 最近一次索引
+ *   skills/
+ *     git-tag-gen/           ← 原始目录结构
+ *       SKILL.md
+ *       references/
+ *         guide.md
+ *     react-best-practices/
+ *       SKILL.md
+ *       rules/
+ *         ...
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative, dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import type { Manifest, SkillPackage, SkillFile } from "./manifest.ts";
 
-export interface GistBackend {
-  type: "gist";
-  token: string;
-  gistId?: string; // 首次 push 后自动记录
-}
+// ============================================================
+// 后端配置（仅 WebDAV）
+// ============================================================
 
 export interface WebDavBackend {
   type: "webdav";
   url: string;
   username?: string;
   password?: string;
-  path?: string; // 远端存放路径，默认 /ccs-sync/bundle.json
+  /** 远端根路径，默认 /ccs-sync/ */
+  path?: string;
 }
-
-export interface LocalBackend {
-  type: "local";
-  path: string; // 本地文件路径，手动通过网盘同步
-}
-
-export type SyncBackend = GistBackend | WebDavBackend | LocalBackend;
 
 export interface CcsConfig {
-  backend?: SyncBackend;
-  /** 上次 push 时间（ISO） */
+  backend?: WebDavBackend;
   lastPush?: string;
-  /** 上次 sync 时间（ISO） */
   lastSync?: string;
 }
 
-// ---- 路径 ----
+// ============================================================
+// 路径
+// ============================================================
 
 export function getCcsDir(): string {
   return join(homedir(), ".ccs");
@@ -46,7 +51,21 @@ export function getConfigPath(): string {
   return join(getCcsDir(), "config.json");
 }
 
-// ---- 读写 ----
+export function getManifestPath(): string {
+  return join(getCcsDir(), "manifest.json");
+}
+
+export function getSkillCacheDir(): string {
+  return join(getCcsDir(), "skills");
+}
+
+export function getSkillDir(directory: string): string {
+  return join(getSkillCacheDir(), directory);
+}
+
+// ============================================================
+// 配置读写
+// ============================================================
 
 export function readConfig(): CcsConfig {
   const path = getConfigPath();
@@ -64,35 +83,86 @@ export function writeConfig(config: CcsConfig): void {
   writeFileSync(getConfigPath(), JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
-// ---- Bundle 缓存 ----
-
-export function getBundlePath(): string {
-  return join(getCcsDir(), "bundle.json");
+export function requireBackend(config: CcsConfig): WebDavBackend {
+  if (!config.backend) {
+    throw new Error(
+      "未配置同步后端。请先运行:\n  ccs config set backend webdav\n  ccs config set webdav.url <你的 WebDAV 地址>\n"
+    );
+  }
+  return config.backend;
 }
 
-export function readCachedBundle(): import("./bundle.ts").SyncBundle | null {
-  const path = getBundlePath();
+// ============================================================
+// Manifest 缓存
+// ============================================================
+
+export function readCachedManifest(): Manifest | null {
+  const path = getManifestPath();
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf-8"));
+    return JSON.parse(readFileSync(path, "utf-8")) as Manifest;
   } catch {
     return null;
   }
 }
 
-export function writeCachedBundle(bundle: import("./bundle.ts").SyncBundle): void {
+export function writeCachedManifest(manifest: Manifest): void {
   const dir = getCcsDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(getBundlePath(), JSON.stringify(bundle, null, 2) + "\n", "utf-8");
+  writeFileSync(getManifestPath(), JSON.stringify(manifest, null, 2) + "\n", "utf-8");
 }
 
-// ---- 后端 ----
+// ============================================================
+// Skill 本地缓存（原始目录结构）
+// ============================================================
 
-export function requireBackend(config: CcsConfig): SyncBackend {
-  if (!config.backend) {
-    throw new Error(
-      "未配置同步后端。请先运行:\n  ccs config set backend gist|webdav|local\n"
-    );
+const EXCLUDE_DIRS = new Set([".git", "__pycache__", "node_modules"]);
+
+/** 将 SkillPackage 展开写入 ~/.ccs/skills/<name>/ 目录 */
+export function writeCachedSkillFiles(pkg: SkillPackage): void {
+  const skillDir = getSkillDir(pkg.directory);
+  for (const file of pkg.files) {
+    const filePath = join(skillDir, file.path);
+    const fileDir = dirname(filePath);
+    if (!existsSync(fileDir)) mkdirSync(fileDir, { recursive: true });
+    writeFileSync(filePath, file.content, "utf-8");
   }
-  return config.backend;
+}
+
+/** 从 ~/.ccs/skills/<name>/ 目录读取并重建 SkillPackage */
+export function readCachedSkillPackage(directory: string): SkillPackage | null {
+  const skillDir = getSkillDir(directory);
+  if (!existsSync(skillDir)) return null;
+  try {
+    const files = readDirRecursive(skillDir);
+    if (files.length === 0) return null;
+    return { directory, files };
+  } catch {
+    return null;
+  }
+}
+
+/** 递归读取目录中的所有文件 */
+function readDirRecursive(dirPath: string, basePath: string = dirPath): SkillFile[] {
+  const files: SkillFile[] = [];
+  if (!existsSync(dirPath)) return files;
+
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") && entry.name !== ".agents") continue;
+    const fullPath = join(dirPath, entry.name);
+
+    if (entry.isDirectory()) {
+      if (EXCLUDE_DIRS.has(entry.name)) continue;
+      files.push(...readDirRecursive(fullPath, basePath));
+    } else if (entry.isFile()) {
+      try {
+        const content = readFileSync(fullPath, "utf-8");
+        files.push({ path: relative(basePath, fullPath), content });
+      } catch {
+        // 跳过无法读取的文件
+      }
+    }
+  }
+
+  return files;
 }

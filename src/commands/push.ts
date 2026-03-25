@@ -1,27 +1,30 @@
 /**
- * ccs push - 交互式预览并上传本机配置到云端
+ * ccs push - 扫描本机配置，聚合到 ~/.ccs/，上传到 WebDAV
  *
  * 流程：
- *   A. 全部推送：展示摘要 → 确认 → 上传
- *   B. 选择性推送：逐类分步选择 → 预览 → 确认 → 上传
+ *   1. 扫描本机 MCP / Prompt / Skill（多源合并）
+ *   2. 交互选择条目
+ *   3. 聚合到 ~/.ccs/（manifest.json + skills/*.json）
+ *   4. 从 ~/.ccs/ 上传到 WebDAV
  */
 
 import * as p from "@clack/prompts";
 import type { Flags } from "../../ccs.ts";
-import type { McpEntry } from "../readers/mcp.ts";
-import type { PromptEntry } from "../readers/prompt.ts";
-import type { SkillMeta } from "../readers/skill.ts";
 import { readAllMcp } from "../readers/mcp.ts";
 import { readAllPrompts } from "../readers/prompt.ts";
-import { readAllSkills } from "../readers/skill.ts";
-import { readConfig, requireBackend, writeConfig } from "../config.ts";
-import { createBackend } from "../backends/index.ts";
+import { scanAllSkills, toSkillIndex, toSkillPackage } from "../readers/skill.ts";
+import {
+  readConfig, requireBackend, writeConfig,
+  writeCachedManifest, writeCachedSkillFiles,
+  getManifestPath,
+} from "../config.ts";
+import { createWebDavClient } from "../backends/index.ts";
 import {
   selectMcpEntries, selectPromptEntries, selectSkillEntries,
   previewMcp, previewPrompts, previewSkills,
 } from "../preview.ts";
 import { hostname } from "node:os";
-import type { SyncBundle } from "../bundle.ts";
+import type { Manifest, SkillPackage } from "../manifest.ts";
 
 export async function pushCommand(flags: Flags): Promise<void> {
   const config = readConfig();
@@ -29,10 +32,10 @@ export async function pushCommand(flags: Flags): Promise<void> {
 
   p.intro("ccs 推送配置");
 
-  // 读取本机全部配置
+  // 1. 扫描本机所有配置
   const allMcp = readAllMcp();
   const allPrompts = readAllPrompts();
-  const allSkills = readAllSkills();
+  const allSkills = scanAllSkills();
 
   p.log.info(
     `本机配置:\n` +
@@ -47,18 +50,16 @@ export async function pushCommand(flags: Flags): Promise<void> {
     return;
   }
 
-  // 收集选中的条目
-  let selectedMcp: McpEntry[];
-  let selectedPrompts: PromptEntry[];
-  let selectedSkills: SkillMeta[];
+  // 2. 交互选择条目
+  let selectedMcp = allMcp;
+  let selectedPrompts = allPrompts;
+  let selectedSkills = allSkills;
 
   if (flags.only) {
-    // --only 模式：指定类别全量推送，跳过交互
-    selectedMcp = flags.only.includes("mcp") ? allMcp : [];
-    selectedPrompts = flags.only.includes("prompt") ? allPrompts : [];
-    selectedSkills = flags.only.includes("skill") ? allSkills : [];
+    if (!flags.only.includes("mcp")) selectedMcp = [];
+    if (!flags.only.includes("prompt")) selectedPrompts = [];
+    if (!flags.only.includes("skill")) selectedSkills = [];
   } else {
-    // 选择推送方式
     const mode = await p.select({
       message: "推送方式",
       options: [
@@ -68,18 +69,11 @@ export async function pushCommand(flags: Flags): Promise<void> {
     });
     if (p.isCancel(mode)) { p.outro("已取消"); return; }
 
-    if (mode === "all") {
-      // 全部推送：直接使用全量数据
-      selectedMcp = allMcp;
-      selectedPrompts = allPrompts;
-      selectedSkills = allSkills;
-    } else {
-      // 选择性推送：逐类分步
+    if (mode === "selective") {
       selectedMcp = [];
       selectedPrompts = [];
       selectedSkills = [];
 
-      // Step 1: MCP
       if (allMcp.length > 0) {
         p.log.step(`Step 1/3 · MCP 服务器 (${allMcp.length} 个)`);
         const result = await selectMcpEntries(allMcp);
@@ -87,7 +81,6 @@ export async function pushCommand(flags: Flags): Promise<void> {
         selectedMcp = result;
       }
 
-      // Step 2: Prompt
       if (allPrompts.length > 0) {
         p.log.step(`Step 2/3 · Prompt (${allPrompts.length} 个应用)`);
         const result = await selectPromptEntries(allPrompts);
@@ -95,12 +88,13 @@ export async function pushCommand(flags: Flags): Promise<void> {
         selectedPrompts = result;
       }
 
-      // Step 3: Skill
       if (allSkills.length > 0) {
         p.log.step(`Step 3/3 · Skill (${allSkills.length} 个)`);
-        const result = await selectSkillEntries(allSkills);
+        const indices = allSkills.map(toSkillIndex);
+        const result = await selectSkillEntries(indices);
         if (result === null) { p.outro("已取消"); return; }
-        selectedSkills = result;
+        const selectedDirs = new Set(result.map((s) => s.directory));
+        selectedSkills = allSkills.filter((s) => selectedDirs.has(s.directory));
       }
     }
   }
@@ -108,7 +102,8 @@ export async function pushCommand(flags: Flags): Promise<void> {
   // 预览
   previewMcp(selectedMcp);
   previewPrompts(selectedPrompts);
-  previewSkills(selectedSkills);
+  const selectedIndices = selectedSkills.map(toSkillIndex);
+  previewSkills(selectedIndices);
 
   if (flags.dryRun) {
     p.log.warn("[dry-run] 预览模式，不会上传");
@@ -116,34 +111,57 @@ export async function pushCommand(flags: Flags): Promise<void> {
     return;
   }
 
-  // 确认
   const confirmed = await p.confirm({
-    message: `确认推送到 ${backend.type} 后端？`,
+    message: `确认推送到 WebDAV？`,
   });
   if (p.isCancel(confirmed) || !confirmed) { p.outro("已取消"); return; }
 
-  // 构建 bundle 并上传
-  const bundle: SyncBundle = {
-    version: "1",
+  // 3. 聚合到 ~/.ccs/
+  const manifest: Manifest = {
+    version: "3",
     pushedAt: new Date().toISOString(),
     hostname: hostname(),
     mcp: selectedMcp,
     prompts: selectedPrompts,
-    skills: selectedSkills,
+    skills: selectedIndices,
   };
 
-  const s = p.spinner();
-  s.start(`正在上传到 ${backend.type} 后端...`);
-  const adapter = createBackend(backend);
-  const { url } = await adapter.write(bundle);
-  s.stop("上传完成");
+  writeCachedManifest(manifest);
+  p.log.step(`聚合索引到 ${getManifestPath()}`);
 
-  // 记录 lastPush
-  config.lastPush = bundle.pushedAt;
+  const skillPackages: SkillPackage[] = [];
+  for (const skill of selectedSkills) {
+    const pkg = toSkillPackage(skill);
+    writeCachedSkillFiles(pkg);
+    skillPackages.push(pkg);
+  }
+  if (skillPackages.length > 0) {
+    p.log.step(`聚合 ${skillPackages.length} 个 Skill 到 ~/.ccs/skills/`);
+  }
+
+  // 4. 从 ~/.ccs/ 上传到 WebDAV
+  const client = createWebDavClient(backend);
+  const s = p.spinner();
+
+  s.start("正在上传索引...");
+  const manifestUrl = await client.uploadManifest(manifest);
+  s.stop("索引上传完成");
+
+  if (skillPackages.length > 0) {
+    const total = skillPackages.length;
+    s.start(`正在上传 ${total} 个 Skill...`);
+    for (let i = 0; i < total; i++) {
+      const pkg = skillPackages[i];
+      s.message(`上传 Skill [${i + 1}/${total}] ${pkg.directory} (${pkg.files.length} 个文件)`);
+      await client.uploadSkillPackage(pkg);
+    }
+    s.stop(`${total} 个 Skill 上传完成`);
+  }
+
+  config.lastPush = manifest.pushedAt;
   writeConfig(config);
 
-  p.log.success(`上传成功 (${bundle.pushedAt})`);
-  if (url) p.log.step(`地址: ${url}`);
-
+  p.log.success(`推送完成 (${manifest.pushedAt})`);
+  p.log.step(`地址: ${manifestUrl}`);
   p.outro("推送完成");
 }
