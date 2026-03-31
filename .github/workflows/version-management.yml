@@ -2,7 +2,7 @@ name: 版本管理
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main, beta]
     types: [opened, synchronize, reopened, labeled, unlabeled, closed]
 
 jobs:
