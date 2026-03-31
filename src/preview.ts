@@ -32,7 +32,6 @@ export async function selectTargetApps(): Promise<AppName[] | null> {
     message: "同步到哪些客户端？",
     options,
     initialValues: detected,
-    required: true,
   });
   if (p.isCancel(result)) return null;
   return result;
@@ -64,7 +63,6 @@ export async function selectTargetAgents(): Promise<string[] | null> {
     message: "同步 Skill 到哪些 Agent？（Universal agents 共享 ~/.agents/skills/）",
     options: [...additionalOptions, ...universalOptions],
     initialValues: installed,
-    required: true,
   });
   if (p.isCancel(result)) return null;
   return result;
@@ -98,7 +96,6 @@ async function multiselectWithAllToggle(
       message: `${message}（取消不需要的）`,
       options,
       initialValues: options.map((o) => o.value),
-      required: true,
     });
     if (p.isCancel(result)) return null;
     return result;
@@ -107,7 +104,6 @@ async function multiselectWithAllToggle(
   const result = await p.multiselect({
     message: `${message}（勾选需要的）`,
     options,
-    required: true,
   });
   if (p.isCancel(result)) return null;
   return result;

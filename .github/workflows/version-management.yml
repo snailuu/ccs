@@ -1,0 +1,27 @@
+name: 版本管理
+
+on:
+  pull_request:
+    branches: [main, dev]
+    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
+
+jobs:
+  version-management:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 版本管理
+        uses: Yuxu-Palace/yuheng-dispatch@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version-prefix: 'v'
+          enable-changelog: 'true'

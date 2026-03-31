@@ -81,9 +81,9 @@ export async function syncCommand(flags: Flags): Promise<void> {
     const selected = await p.multiselect({
       message: "选择要同步的类型",
       options: categoryOptions,
-      required: true,
     });
     if (p.isCancel(selected)) { p.outro("已取消"); return; }
+    if (selected.length === 0) { p.outro("未选择任何类型"); return; }
     categories = selected;
   }
 
