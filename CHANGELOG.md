@@ -9,6 +9,12 @@
 * **sync:** sync 支持选择目标 CLI 客户端写入 ([732cf93](https://github.com/snailuu/ccs/commit/732cf93b0da32f2385f228f1bbe2041148939f56))
 * **sync:** 新增交互式同步命令替代 pull ([dcd7999](https://github.com/snailuu/ccs/commit/dcd79994c928a8b4b6e5f61de04bb059aaea8c9e))
 
+## [v1.3.2-beta.0] - 2026-03-31
+
+### 🐛 Bug Fixes
+- fix(sync): 允许 multiselect 空选提交，修复无法跳过的问题 ([#3](https://github.com/snailuu/ccs/pull/3))
+
+
 ## [1.1.1](https://github.com/snailuu/ccs/compare/v1.1.0...v1.1.1) (2026-03-23)
 
 
