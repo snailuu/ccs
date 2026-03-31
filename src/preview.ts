@@ -96,6 +96,7 @@ async function multiselectWithAllToggle(
       message: `${message}（取消不需要的）`,
       options,
       initialValues: options.map((o) => o.value),
+      required: false,
     });
     if (p.isCancel(result)) return null;
     return result;
@@ -104,6 +105,7 @@ async function multiselectWithAllToggle(
   const result = await p.multiselect({
     message: `${message}（勾选需要的）`,
     options,
+    required: false,
   });
   if (p.isCancel(result)) return null;
   return result;
