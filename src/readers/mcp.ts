@@ -57,10 +57,9 @@ function readCodexMcp(): McpEntry[] {
 function parseCodexTomlMcp(text: string): McpEntry[] {
   const entries: McpEntry[] = [];
   const sectionRegex = /^\[mcp_servers\.([^\]]+)\]/gm;
-  let match: RegExpExecArray | null;
   const lines = text.split("\n");
 
-  while ((match = sectionRegex.exec(text)) !== null) {
+  for (let match = sectionRegex.exec(text); match !== null; match = sectionRegex.exec(text)) {
     const id = match[1].trim();
     const startLine = text.substring(0, match.index).split("\n").length;
     const sectionLines: string[] = [];
