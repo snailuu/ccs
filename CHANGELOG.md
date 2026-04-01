@@ -12,6 +12,12 @@
 ## [v1.4.0-beta.1] - 2026-04-01
 
 ### 🐛 Bug Fixes
+- fix(ci): 修复 workflow_dispatch 权限和 tag 前缀重复问题 ([#8](https://github.com/snailuu/ccs/pull/8))
+
+
+## [v1.4.0-beta.1] - 2026-04-01
+
+### 🐛 Bug Fixes
 - fix(update): 发布时间显示为本地时区 ([#7](https://github.com/snailuu/ccs/pull/7))
 
 
