@@ -9,6 +9,12 @@
 * **sync:** sync 支持选择目标 CLI 客户端写入 ([732cf93](https://github.com/snailuu/ccs/commit/732cf93b0da32f2385f228f1bbe2041148939f56))
 * **sync:** 新增交互式同步命令替代 pull ([dcd7999](https://github.com/snailuu/ccs/commit/dcd79994c928a8b4b6e5f61de04bb059aaea8c9e))
 
+## [v1.4.0-beta.0] - 2026-04-01
+
+### ✨ Features
+- feat(session): 新增 Claude Code 会话同步功能 ([#5](https://github.com/snailuu/ccs/pull/5))
+
+
 ## [v1.3.2-beta.1] - 2026-03-31
 
 ### 🐛 Bug Fixes
