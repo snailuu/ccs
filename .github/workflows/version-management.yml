@@ -1,0 +1,36 @@
+name: 版本管理
+
+on:
+  pull_request:
+    branches: [main, beta]
+    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
+
+jobs:
+  version-management:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 版本管理
+        id: version
+        uses: Yuxu-Palace/yuheng-dispatch@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version-prefix: 'v'
+          enable-changelog: 'true'
+
+      - name: 触发 Release 构建
+        if: steps.version.outputs.next-version && steps.version.outputs.is-preview == 'false'
+        run: |
+          gh workflow run release.yml -f tag="${{ steps.version.outputs.next-version }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

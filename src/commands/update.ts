@@ -222,7 +222,8 @@ export async function updateCommand(currentVersion: string): Promise<void> {
   s.stop(`最新版本: ${latestVersionText}`);
   p.log.info(`当前版本: ${currentVersionText}`);
   if (manifest.publishedAt) {
-    p.log.info(`发布时间: ${manifest.publishedAt}`);
+    const localTime = new Date(manifest.publishedAt).toLocaleString();
+    p.log.info(`发布时间: ${localTime}`);
   }
 
   const cmp = compareVersions(latestVersion, currentVersion);
