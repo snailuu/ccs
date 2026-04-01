@@ -47,7 +47,7 @@ function printHelp() {
   ccs diff                  预览本机与云端的差异
   ccs config                查看同步后端配置
   ccs config set <key> <value>  设置同步后端参数
-  ccs update                检查并更新到最新版本
+  ccs update [--beta]       检查并更新到最新版本（--beta 更新到测试版）
   ccs uninstall             卸载 ccs 及配置数据
 
 选项:
@@ -105,7 +105,7 @@ async function main() {
         await configCommand(restArgs);
         break;
       case "update":
-        await updateCommand(VERSION);
+        await updateCommand(VERSION, restArgs.includes("--beta"));
         break;
       case "uninstall":
         await uninstallCommand();

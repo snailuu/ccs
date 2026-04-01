@@ -49,13 +49,39 @@ function normalizeVersion(version: string): string {
   return version.trim().replace(/^v/i, "");
 }
 
-/** 简单语义化版本比较，返回 1(a>b) / 0(a==b) / -1(a<b) */
+/** 解析版本号为 { main: [1,4,0], pre: [0] | null } */
+function parseVersion(version: string): { main: number[]; pre: number[] | null } {
+  const clean = normalizeVersion(version);
+  const [mainPart, prePart] = clean.split("-", 2);
+  const main = mainPart.split(".").map(Number);
+  if (!prePart) return { main, pre: null };
+  // "beta.0" → 提取数字部分
+  const preNums = prePart.split(".").map(s => Number(s.replace(/\D/g, "")) || 0);
+  return { main, pre: preNums };
+}
+
+/** 语义化版本比较，支持预发布后缀，返回 1(a>b) / 0(a==b) / -1(a<b) */
 export function compareVersions(a: string, b: string): number {
-  const pa = normalizeVersion(a).split(".").map(Number);
-  const pb = normalizeVersion(b).split(".").map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] ?? 0;
-    const nb = pb[i] ?? 0;
+  const va = parseVersion(a);
+  const vb = parseVersion(b);
+
+  // 先比较主版本号
+  for (let i = 0; i < Math.max(va.main.length, vb.main.length); i++) {
+    const na = va.main[i] ?? 0;
+    const nb = vb.main[i] ?? 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+
+  // 主版本相同时：正式版 > 预发布版
+  if (!va.pre && vb.pre) return 1;
+  if (va.pre && !vb.pre) return -1;
+  if (!va.pre && !vb.pre) return 0;
+
+  // 都是预发布：比较预发布数字
+  for (let i = 0; i < Math.max(va.pre!.length, vb.pre!.length); i++) {
+    const na = va.pre![i] ?? 0;
+    const nb = vb.pre![i] ?? 0;
     if (na > nb) return 1;
     if (na < nb) return -1;
   }
@@ -104,8 +130,8 @@ export function resolveInstalledBinaryPath(
   return execPathValue;
 }
 
-export async function fetchLatestManifest(): Promise<UpdateManifest> {
-  const res = await fetch(`${CDN_BASE}/ccs/latest/manifest.json`, {
+export async function fetchLatestManifest(channel: "latest" | "beta" = "latest"): Promise<UpdateManifest> {
+  const res = await fetch(`${CDN_BASE}/ccs/${channel}/manifest.json`, {
     headers: { "User-Agent": "ccs-cli" },
   });
   if (!res.ok) {
@@ -180,8 +206,9 @@ function verifyDownloadedBinary(tmpPath: string): string {
   return execFileSync(tmpPath, ["--version"], { encoding: "utf-8" }).trim();
 }
 
-export async function updateCommand(currentVersion: string): Promise<void> {
-  p.intro("ccs 更新检测");
+export async function updateCommand(currentVersion: string, useBeta = false): Promise<void> {
+  const channel = useBeta ? "beta" : "latest";
+  p.intro(`ccs 更新检测${useBeta ? " (beta)" : ""}`);
 
   let binaryPath: string;
   try {
@@ -199,7 +226,7 @@ export async function updateCommand(currentVersion: string): Promise<void> {
 
   let manifest: UpdateManifest;
   try {
-    manifest = await fetchLatestManifest();
+    manifest = await fetchLatestManifest(channel);
   } catch (err) {
     s.stop("检查失败");
     p.log.error(`无法获取最新版本: ${err instanceof Error ? err.message : String(err)}`);
