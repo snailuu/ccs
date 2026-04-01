@@ -6,7 +6,7 @@ import * as p from "@clack/prompts";
 import { existsSync } from "node:fs";
 import type { McpEntry } from "./readers/mcp.ts";
 import type { PromptEntry } from "./readers/prompt.ts";
-import type { SkillIndex } from "./manifest.ts";
+import type { SkillIndex, SessionMeta } from "./manifest.ts";
 import { Paths, ALL_APPS, type AppName, AGENTS, ALL_AGENT_NAMES, detectInstalledAgents } from "./readers/paths.ts";
 
 // ============================================================
@@ -151,6 +151,35 @@ export async function selectSkillEntries(entries: SkillIndex[]): Promise<SkillIn
 }
 
 // ============================================================
+// Session 选择器（autocompleteMultiselect）
+// ============================================================
+
+export async function selectSessionEntries(sessions: SessionMeta[]): Promise<SessionMeta[] | null> {
+  const options = sessions.map((s) => {
+    const date = s.lastMessageAt
+      ? new Date(s.lastMessageAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })
+      : "未知";
+    // label 包含项目名、分支、首条提问 → 都可被搜索
+    const labelParts = [s.projectName];
+    if (s.gitBranch) labelParts.push(`[${s.gitBranch}]`);
+    if (s.firstQuestion) labelParts.push([...s.firstQuestion].slice(0, 30).join(""));
+    return {
+      value: s.sessionId,
+      label: labelParts.join(" "),
+      hint: `${s.messageCount} 条 | ${date}`,
+    };
+  });
+
+  const result = await p.autocompleteMultiselect({
+    message: "选择要同步的会话（输入关键词搜索）",
+    options,
+  });
+  if (p.isCancel(result)) return null;
+  const ids = new Set(result);
+  return sessions.filter((s) => ids.has(s.sessionId));
+}
+
+// ============================================================
 // 预览
 // ============================================================
 
@@ -185,4 +214,32 @@ export function previewSkills(entries: SkillIndex[]): void {
     return `  ${e.name || e.directory}\n    来源: ${source} | ${e.fileCount} 个文件 (${size})`;
   });
   p.log.step(`Skill (${entries.length} 个):\n${lines.join("\n")}`);
+}
+
+export function previewSessions(entries: SessionMeta[]): void {
+  if (entries.length === 0) return;
+  // 按项目分组
+  const grouped = new Map<string, SessionMeta[]>();
+  for (const e of entries) {
+    const list = grouped.get(e.projectName) ?? [];
+    list.push(e);
+    grouped.set(e.projectName, list);
+  }
+
+  const lines: string[] = [];
+  for (const [project, sessions] of grouped) {
+    lines.push(`  ${project}/`);
+    for (const s of sessions) {
+      const size = s.strippedSize < 1024
+        ? `${s.strippedSize}B`
+        : `${(s.strippedSize / 1024).toFixed(1)}KB`;
+      const date = s.lastMessageAt
+        ? new Date(s.lastMessageAt).toLocaleDateString("zh-CN")
+        : "未知";
+      const branch = s.gitBranch ? ` | ${s.gitBranch}` : "";
+      const question = s.firstQuestion ? `\n      "${s.firstQuestion}"` : "";
+      lines.push(`    ${s.sessionId.slice(0, 8)} | ${s.messageCount} 条消息 | ${size} | ${date}${branch}${question}`);
+    }
+  }
+  p.log.step(`Session (${entries.length} 个):\n${lines.join("\n")}`);
 }

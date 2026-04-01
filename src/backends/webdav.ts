@@ -193,6 +193,20 @@ export class WebDavClient {
     return files.length > 0 ? { directory, files } : null;
   }
 
+  // ---- Session ----
+
+  /** 上传精简后的 session 到 /sessions/<id>.jsonl */
+  async uploadSession(sessionId: string, content: string): Promise<void> {
+    await this.putFile(`/sessions/${sessionId}.jsonl`, content, "text/plain");
+  }
+
+  /** 下载精简后的 session 内容 */
+  async downloadSession(sessionId: string): Promise<string | null> {
+    return this.getFile(`/sessions/${sessionId}.jsonl`);
+  }
+
+  // ---- 目录列表 ----
+
   /** PROPFIND 递归列出目录下所有文件的相对路径 */
   private async listFiles(dirPath: string): Promise<string[]> {
     const res = await fetch(this.url(`${dirPath}/`), {
