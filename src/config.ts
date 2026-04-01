@@ -4,15 +4,9 @@
  * ~/.ccs/ 目录结构：
  *   config.json              ← WebDAV 配置 + 时间戳
  *   manifest.json            ← 最近一次索引
- *   skills/
- *     git-tag-gen/           ← 原始目录结构
- *       SKILL.md
- *       references/
- *         guide.md
- *     react-best-practices/
- *       SKILL.md
- *       rules/
- *         ...
+ *   sessions-cache.json      ← Session SHA256 缓存（增量判断）
+ *   skills/                  ← Skill 文件缓存
+ *   sessions/                ← Session 精简内容缓存
  */
 
 import { homedir } from "node:os";
@@ -141,6 +135,58 @@ export function readCachedSkillPackage(directory: string): SkillPackage | null {
     return null;
   }
 }
+
+// ============================================================
+// Session 缓存
+// ============================================================
+
+export function getSessionsCachePath(): string {
+  return join(getCcsDir(), "sessions-cache.json");
+}
+
+export function getSessionCacheDir(): string {
+  return join(getCcsDir(), "sessions");
+}
+
+/** 读取 sessions-cache.json（sessionId → sha256 映射） */
+export function readSessionsCache(): Record<string, { sha256: string }> {
+  const path = getSessionsCachePath();
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+/** 写入 sessions-cache.json */
+export function writeSessionsCache(cache: Record<string, { sha256: string }>): void {
+  const dir = getCcsDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(getSessionsCachePath(), JSON.stringify(cache, null, 2) + "\n", "utf-8");
+}
+
+/** 从 ~/.ccs/sessions/<id>.jsonl 读取缓存的精简 session */
+export function readCachedSession(sessionId: string): string | null {
+  const filePath = join(getSessionCacheDir(), `${sessionId}.jsonl`);
+  if (!existsSync(filePath)) return null;
+  try {
+    return readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/** 将精简后的 session 写入 ~/.ccs/sessions/<id>.jsonl */
+export function writeCachedSession(sessionId: string, content: string): void {
+  const dir = getSessionCacheDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${sessionId}.jsonl`), content, "utf-8");
+}
+
+// ============================================================
+// Skill 本地缓存 — 辅助函数
+// ============================================================
 
 /** 递归读取目录中的所有文件 */
 function readDirRecursive(dirPath: string, basePath: string = dirPath): SkillFile[] {
