@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要构建的 tag（如 v1.4.0）"
+        required: true
 
 permissions:
   contents: write
@@ -21,10 +26,21 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git checkout "${{ steps.tag.outputs.tag }}"
+
       - name: Build binaries
         run: |
           mkdir -p dist
-          app_version="${GITHUB_REF_NAME#v}"
+          app_version="${{ steps.tag.outputs.version }}"
 
           bun build ccs.ts --compile --target=bun-darwin-arm64 --define "__APP_VERSION__='${app_version}'" --outfile dist/ccs-darwin-arm64
           bun build ccs.ts --compile --target=bun-darwin-x64 --define "__APP_VERSION__='${app_version}'" --outfile dist/ccs-darwin-x64
@@ -37,7 +53,7 @@ jobs:
           published_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           cat > dist/manifest.json <<EOF
           {
-            "version": "${GITHUB_REF_NAME}",
+            "version": "${{ steps.tag.outputs.tag }}",
             "publishedAt": "${published_at}",
             "files": {
               "darwin-arm64": {
@@ -75,6 +91,7 @@ jobs:
             dist/ccs-linux-arm64
             dist/ccs-windows-x64.exe
             dist/checksums.txt
+          tag_name: ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
 
       # ── 上传到又拍云 CDN ───────
@@ -82,7 +99,7 @@ jobs:
         uses: snailuu/upyun-sh-upload@v1
         with:
           service: ccs
-          version: ${{ github.ref_name }}
+          version: ${{ steps.tag.outputs.tag }}
           files: |
             dist/ccs-darwin-arm64
             dist/ccs-darwin-x64
