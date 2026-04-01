@@ -12,6 +12,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      actions: write
 
     steps:
       - name: Checkout
@@ -30,6 +31,6 @@ jobs:
       - name: 触发 Release 构建
         if: steps.version.outputs.next-version && steps.version.outputs.is-preview == 'false'
         run: |
-          gh workflow run release.yml -f tag="v${{ steps.version.outputs.next-version }}"
+          gh workflow run release.yml -f tag="${{ steps.version.outputs.next-version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
