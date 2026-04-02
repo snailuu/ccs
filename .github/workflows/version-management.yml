@@ -5,6 +5,10 @@ on:
     branches: [main, beta]
     types: [opened, synchronize, reopened, labeled, unlabeled, closed]
 
+concurrency:
+  group: version-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   version-management:
     runs-on: ubuntu-latest
