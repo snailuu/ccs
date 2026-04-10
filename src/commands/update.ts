@@ -207,7 +207,9 @@ function verifyDownloadedBinary(tmpPath: string): string {
 }
 
 export async function updateCommand(currentVersion: string, useBeta = false): Promise<void> {
-  const channel = useBeta ? "beta" : "latest";
+  // 当前版本含预发布标签时自动切换到 beta 通道
+  const isBetaVersion = /-(alpha|beta|rc|dev)/.test(currentVersion);
+  const channel = (useBeta || isBetaVersion) ? "beta" : "latest";
   p.intro(`ccs 更新检测${useBeta ? " (beta)" : ""}`);
 
   let binaryPath: string;
