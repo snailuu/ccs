@@ -9,6 +9,17 @@
 * **sync:** sync 支持选择目标 CLI 客户端写入 ([732cf93](https://github.com/snailuu/ccs/commit/732cf93b0da32f2385f228f1bbe2041148939f56))
 * **sync:** 新增交互式同步命令替代 pull ([dcd7999](https://github.com/snailuu/ccs/commit/dcd79994c928a8b4b6e5f61de04bb059aaea8c9e))
 
+## [v1.4.1] - 2026-04-10
+
+### 🐛 Bug Fixes
+- fix(update): 清除 macOS quarantine 属性解决二进制校验被 Gatekeeper 拦截 ([#18](https://github.com/snailuu/ccs/pull/18))
+  - by CodeRabbit
+  - * **新功能**
+  - * 添加 macOS 隔离属性清除功能，确保下载的二进制文件可正确执行。
+  - * 改进二进制验证的错误处理，提供更详细的失败信息和Gatekeeper阻止提示。
+  - * **样式**
+
+
 ## [v1.4.0] - 2026-04-10
 
 ### 📝 Changes
