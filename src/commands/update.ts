@@ -93,17 +93,17 @@ export function detectPlatformKey(): string {
   const os = process.platform === "darwin"
     ? "darwin"
     : process.platform === "linux"
-    ? "linux"
-    : process.platform === "win32"
-    ? "windows"
-    : null;
+      ? "linux"
+      : process.platform === "win32"
+        ? "windows"
+        : null;
   if (!os) throw new Error(`不支持的操作系统: ${process.platform}`);
 
   const arch = process.arch === "x64"
     ? "x64"
     : process.arch === "arm64"
-    ? "arm64"
-    : null;
+      ? "arm64"
+      : null;
   if (!arch) throw new Error(`不支持的架构: ${process.arch}`);
 
   return `${os}-${arch}`;
@@ -156,7 +156,7 @@ function ensureBinaryPathWritable(binaryPath: string): void {
 function cleanupFile(path: string): void {
   try {
     if (existsSync(path)) unlinkSync(path);
-  } catch {}
+  } catch { }
 }
 
 export function replaceBinaryAtomically(
@@ -174,7 +174,7 @@ export function replaceBinaryAtomically(
   } catch (error) {
     try {
       if (ops.exists(tmpPath)) ops.unlink(tmpPath);
-    } catch {}
+    } catch { }
 
     if (backupCreated && !ops.exists(binaryPath) && ops.exists(backupPath)) {
       try {
@@ -191,7 +191,7 @@ export function replaceBinaryAtomically(
 
   try {
     if (backupCreated && ops.exists(backupPath)) ops.unlink(backupPath);
-  } catch {}
+  } catch { }
 }
 
 function buildManualUpdateHint(binaryPath: string, downloadUrl: string): string {
@@ -202,8 +202,24 @@ function buildManualUpdateHint(binaryPath: string, downloadUrl: string): string 
   return `curl -fsSL -o ${quotedPath} ${downloadUrl}\nchmod +x ${quotedPath}`;
 }
 
+function clearQuarantine(filePath: string): void {
+  if (process.platform !== "darwin") return;
+  try {
+    execFileSync("xattr", ["-d", "com.apple.quarantine", filePath], { stdio: "ignore" });
+  } catch { }
+}
+
 function verifyDownloadedBinary(tmpPath: string): string {
-  return execFileSync(tmpPath, ["--version"], { encoding: "utf-8" }).trim();
+  clearQuarantine(tmpPath);
+  try {
+    return execFileSync(tmpPath, ["--version"], { encoding: "utf-8" }).trim();
+  } catch (err: unknown) {
+    const e = err as { status?: number; signal?: string; stderr?: Buffer };
+    const detail = e.signal === "SIGKILL"
+      ? "二进制被系统终止（macOS Gatekeeper 可能阻止了未签名的程序）"
+      : e.stderr?.toString().trim() || String(err);
+    throw new Error(detail);
+  }
 }
 
 export async function updateCommand(currentVersion: string, useBeta = false): Promise<void> {
