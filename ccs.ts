@@ -22,6 +22,7 @@ import { configCommand } from "./src/commands/config.ts";
 import { diffCommand } from "./src/commands/diff.ts";
 import { updateCommand } from "./src/commands/update.ts";
 import { uninstallCommand } from "./src/commands/uninstall.ts";
+import { findCommand } from "./src/commands/find.ts";
 
 declare const __APP_VERSION__: string;
 
@@ -43,11 +44,12 @@ function printHelp() {
 使用方法:
   ccs push [--dry-run]      采集本机配置并上传到云端
   ccs sync                  从云端拉取并应用配置到指定 CLI 工具
+  ccs find [mcp|skill|prompt]  浏览本地 MCP/Skill/Prompt 配置
   ccs status                显示本机当前配置摘要
   ccs diff                  预览本机与云端的差异
   ccs config                查看同步后端配置
   ccs config set <key> <value>  设置同步后端参数
-  ccs update                检查并更新到最新版本
+  ccs update [--beta]       检查并更新到最新版本（--beta 更新到测试版）
   ccs uninstall             卸载 ccs 及配置数据
 
 选项:
@@ -95,6 +97,9 @@ async function main() {
       case "sync":
         await syncCommand(flags);
         break;
+      case "find":
+        await findCommand(restArgs[0]);
+        break;
       case "status":
         await statusCommand(flags);
         break;
@@ -105,7 +110,7 @@ async function main() {
         await configCommand(restArgs);
         break;
       case "update":
-        await updateCommand(VERSION);
+        await updateCommand(VERSION, restArgs.includes("--beta"));
         break;
       case "uninstall":
         await uninstallCommand();

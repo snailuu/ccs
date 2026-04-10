@@ -9,6 +9,24 @@
 * **sync:** sync 支持选择目标 CLI 客户端写入 ([732cf93](https://github.com/snailuu/ccs/commit/732cf93b0da32f2385f228f1bbe2041148939f56))
 * **sync:** 新增交互式同步命令替代 pull ([dcd7999](https://github.com/snailuu/ccs/commit/dcd79994c928a8b4b6e5f61de04bb059aaea8c9e))
 
+## [v1.4.0-beta.4] - 2026-04-10
+
+### 🐛 Bug Fixes
+- fix(update): 当前为预发布版本时自动使用 beta 更新通道 ([#15](https://github.com/snailuu/ccs/pull/15))
+
+
+## [v1.4.0-beta.3] - 2026-04-10
+
+### 🐛 Bug Fixes
+- feat(find): 新增 find 命令，支持交互式搜索浏览本地 MCP/Skill/Prompt ([#14](https://github.com/snailuu/ccs/pull/14))
+
+
+## [v1.4.0-beta.2] - 2026-04-01
+
+### 🐛 Bug Fixes
+- feat(update): 区分 beta/latest 更新通道，支持 --beta 参数 ([#12](https://github.com/snailuu/ccs/pull/12))
+
+
 ## [v1.3.2] - 2026-04-01
 
 ### 🐛 Bug Fixes
