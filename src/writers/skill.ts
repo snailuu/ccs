@@ -76,8 +76,8 @@ function syncAgentLinks(
     const agent = AGENTS[agentName];
     if (!agent) continue;
     if (agent.isUniversal) continue;
-    // 如果有 agent 启用信息，跳过未启用的
-    if (index?.agents && Object.keys(index.agents).length > 0 && !index.agents[agentName]) continue;
+    // 用户显式选择目标 agent 时，以用户选择为准；仅在未指定目标时回退到源索引中的启用信息
+    if (!targetAgents && index?.agents && Object.keys(index.agents).length > 0 && !index.agents[agentName]) continue;
 
     const dest = join(agent.globalSkillsDir, directory);
     if (existsSync(dest)) continue;
