@@ -9,6 +9,15 @@
 * **sync:** sync 支持选择目标 CLI 客户端写入 ([732cf93](https://github.com/snailuu/ccs/commit/732cf93b0da32f2385f228f1bbe2041148939f56))
 * **sync:** 新增交互式同步命令替代 pull ([dcd7999](https://github.com/snailuu/ccs/commit/dcd79994c928a8b4b6e5f61de04bb059aaea8c9e))
 
+## [v1.4.3-beta.0] - 2026-04-16
+
+### 🐛 Bug Fixes
+- fix(skill): 修复同步时显式目标 agent 被错误跳过 ([#20](https://github.com/snailuu/ccs/pull/20))
+  - 修复 skill 同步时 targetAgents 与源索引 agents 信息冲突导致的错误跳过
+  - 显式选择目标 agent 时以用户选择为准，仅在未指定目标时回退使用源索引
+  - 新增回归测试覆盖显式覆盖与回退两种场景
+
+
 ## [v1.4.2] - 2026-04-10
 
 ### 🐛 Bug Fixes
